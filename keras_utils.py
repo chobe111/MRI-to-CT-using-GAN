@@ -55,5 +55,17 @@ def decoder_conv(filter_size: int, input: tensor, merge_input: tensor) -> tensor
     return up3
 
 
-def generator_final_layer(filter_size):
+def generator_final_layer(filter_size, input: tensor, merge_input: tensor) -> tensor:
+    merge1 = concatenate([input, merge_input], axis=3)
+
+    conv1 = Conv2D(filter_size, (3, 3), padding='same', activation='relu')(merge1)
+    batch1 = BatchNormalization()(conv1)
+
+    conv2 = Conv2D(filter_size, (3, 3), padding='same', activation='relu')(batch1)
+    batch2 = Conv2D(filter_size, (3, 3), padding='same', activation='relu')(conv2)
+
+    conv3 = Conv2D(1, (1, 1), padding='same', activation='sigmoid')(batch2)
+
+    return conv3
+
     pass

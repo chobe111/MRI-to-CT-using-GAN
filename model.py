@@ -2,6 +2,8 @@ import keras.models
 import keras.layers
 import keras.optimizers
 from keras_utils import *
+from keras.optimizers import Adam
+from keras.losses import mae
 
 
 class Discriminator(keras.models.Model):
@@ -19,12 +21,17 @@ class Discriminator(keras.models.Model):
 
 class Generator(keras.models.Model):
     def __init__(self, input_size, *args, **kwargs):
-        # input_shape = (256, 256, 1)
+        # input_shape = (512, 512, 1)
+
         super().__init__(*args, **kwargs)
         self.input_size = input_size
         self.inputs = keras.models.Input(input_size)
+        self._networks()
 
-    def _encoder(self):
+        # set adam optimizer
+        self.compile(optimizer=Adam(lr=0.0002, beta_1=0.5))
+
+    def _networks(self):
         batch1, pool1 = encoder_conv(32, self.inputs)
         batch2, pool2 = encoder_conv(64, pool1)
         batch3, pool3 = encoder_conv(128, pool2)
@@ -38,12 +45,6 @@ class Generator(keras.models.Model):
         up4 = decoder_conv(128, up3, batch3)
         up5 = decoder_conv(64, up4, batch2)
 
-        generator_final_layer(32)
-
-        pass
-
-    def _decoder(self):
-        pass
-
-    def __call__(self, *args, **kwargs):
-        pass
+        output = generator_final_layer(32, up5, batch1)
+        model = keras.models.Model()
+        self.outputs = output
