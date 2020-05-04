@@ -10,7 +10,17 @@ from keras.losses import mae
 class Discriminator(keras.models.Model):
     """
     This Discriminator model is implementation of MRI_only_brain_radiotherapy Discriminator
+    written by Samaneh Kazemifar
 
+    input size = 352 * 352 * 1
+
+    output_size = real_number 0 ~ 1
+
+    learning_rate = 0.00005
+    beta_1 = 0.5
+
+    filter_size = 2 ->4 ->8 ->16 ->32 -> 64
+    6 convolution layers + 5 fully connected layers
     """
 
     def __init__(self, input_size):
@@ -29,6 +39,8 @@ class Discriminator(keras.models.Model):
 
 class Generator(keras.models.Model):
     """
+    input_size = (512,512,1) gray scale
+
     This Generator model is implementation of MRI_only_brain_radiotherapy Generator
     written by Samaneh Kazemifar
 
