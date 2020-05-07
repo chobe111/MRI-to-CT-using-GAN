@@ -35,8 +35,6 @@ class Discriminator(keras.models.Model):
 
         self.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.00005, beta_1=0.5))
 
-        return
-
     @staticmethod
     def _networks(inputs):
         conv1 = discriminator_conv(2, inputs)
