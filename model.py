@@ -5,6 +5,7 @@ from keras.models import Model
 from keras_utils import *
 from keras.optimizers import Adam
 from keras.losses import mae
+from keras.layers import Flatten
 
 
 class Discriminator(keras.models.Model):
@@ -24,11 +25,39 @@ class Discriminator(keras.models.Model):
     """
 
     def __init__(self, input_size):
-        self.input_size = input_size
-        self.inputs = keras.models.Input(input_size)
+        inputs = keras.layers.Input(input_size)
+        outputs = self._networks(inputs)
 
-    def _networks(self):
-        pass
+        super().__init__(
+            inputs=inputs,
+            outputs=outputs
+        )
+
+        self.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.00005, beta_1=0.5))
+
+        return
+
+    @staticmethod
+    def _networks(inputs):
+        conv1 = discriminator_conv(2, inputs)
+        pool1 = MaxPooling2D((2, 2))(conv1)
+        conv2 = discriminator_conv(4, pool1)
+        conv3 = discriminator_conv(8, conv2)
+        conv4 = discriminator_conv(16, conv3)
+        conv5 = discriminator_conv(32, conv4)
+        conv6 = discriminator_conv(64, conv5)
+
+        flat = Flatten()(conv6)
+
+        dense1 = discriminator_dense(8 * 8 * 64, flat)
+        dense2 = discriminator_dense(4068, dense1)
+        dense3 = discriminator_dense(2048, dense2)
+        dense4 = discriminator_dense(1024, dense3)
+        dense5 = discriminator_dense(512, dense4)
+
+        final_layer = discriminator_final_layer(dense5)
+
+        return final_layer
 
     def _load_data(self):
         pass
@@ -60,10 +89,8 @@ class Generator(keras.models.Model):
             outputs=outputs
         )
         # input_shape = (512, 512, 1)
-
-        self.input_size = input_size
-
         # set adam optimizer
+        self.compile(loss=self._mi_losses, optimizer=Adam(lr=0.0002, beta_1=0.5))
 
     @staticmethod
     def _networks(inputs):
@@ -82,3 +109,13 @@ class Generator(keras.models.Model):
 
         outputs = generator_final_layer(32, up5, batch1)
         return outputs
+
+    # TODO : Create Mutual Information loss What is image Distribution
+    @staticmethod
+    def _mi_losses(y_true: Tensor, y_pred: Tensor) -> float:
+        """
+        :param y_true: y_true is input CT
+        :param y_pred: y_pred is synthesis CT from input MRI
+        :return: MI Information
+        """
+        pass
