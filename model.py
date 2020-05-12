@@ -6,6 +6,12 @@ from keras_utils import *
 from keras.optimizers import Adam
 from keras.losses import mae
 from keras.layers import Flatten
+import tensorflow as tf
+
+
+class Mrigan:
+    def __init__(self):
+        return
 
 
 class Discriminator(keras.models.Model):
@@ -28,12 +34,20 @@ class Discriminator(keras.models.Model):
         inputs = keras.layers.Input(input_size)
         outputs = self._networks(inputs)
 
+        self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
+        self.optimizer = Adam(lr=0.00005, beta_1=0.5)
         super().__init__(
             inputs=inputs,
             outputs=outputs
         )
 
-        self.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.00005, beta_1=0.5))
+    def discriminator_loss(self, real_image, fake_image):
+        real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
+        fake_loss = self.loss_obj(tf.zeros_like(fake_image), fake_image)
+
+        total_loss = 0.5 * (real_loss + fake_loss)
+
+        return total_loss
 
     @staticmethod
     def _networks(inputs):
@@ -58,10 +72,10 @@ class Discriminator(keras.models.Model):
         return final_layer
 
     def _load_data(self):
-        pass
+        return
 
     def __call__(self, *args, **kwargs):
-        pass
+        return self
 
 
 class Generator(keras.models.Model):
@@ -81,7 +95,8 @@ class Generator(keras.models.Model):
     def __init__(self, input_size, *args, **kwargs):
         inputs = keras.layers.Input(input_size)
         outputs = self._networks(inputs)
-
+        self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
+        self.optimizer = Adam(lr=0.0002, beta_1=0.5)
         super().__init__(
             inputs=inputs,
             outputs=outputs
@@ -89,6 +104,11 @@ class Generator(keras.models.Model):
         # input_shape = (512, 512, 1)
         # set adam optimizer
         self.compile(loss=self._mi_losses, optimizer=Adam(lr=0.0002, beta_1=0.5))
+
+    def generator_loss(self, generated_image):
+        generated_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
+        # TODO : Use L1 or L2 loss
+        return generated_loss
 
     @staticmethod
     def _networks(inputs):
@@ -117,3 +137,6 @@ class Generator(keras.models.Model):
         :return: MI Information
         """
         pass
+
+    def __call__(self, *args, **kwargs):
+        return self
