@@ -19,7 +19,8 @@ def main():
     coder writer : Myungki Cho Inha University in South Korea
     coder email : chobe0719@gmail.com
     """
-    return
+
+    pass
 
 
 if __name__ == '__main__':

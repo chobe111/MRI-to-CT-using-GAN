@@ -27,22 +27,6 @@ class GanLosses:
 
     @staticmethod
     def mutual_information_2d(x, y, sigma=1, normalized=False):
-        """
-            Computes (normalized) mutual information between two 1D variate from a
-            joint histogram.
-            Parameters
-            ----------
-            x : 1D array
-                first variable
-            y : 1D array
-                second variable
-            sigma: float
-                sigma for Gaussian smoothing of the joint histogram
-            Returns
-            -------
-            nmi: float
-                the computed similariy measure
-            """
         EPS = np.finfo(float).eps
 
         bins = (256, 256)
