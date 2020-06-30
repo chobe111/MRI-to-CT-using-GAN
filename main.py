@@ -1,14 +1,14 @@
-from keras.losses import BinaryCrossentropy
+from tensorflow.keras.losses import BinaryCrossentropy
 import argparse
 
-parser = argparse.ArgumentParser(description="Implementation of MRI-only brain radiotherapy")
+pars                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 er = argparse.ArgumentParser(description="Implementation of MRI-only brain radiotherapy")
 
 
 def main():
     """
     This repository is implementation of MRI-only brain radiotherapy: assessing the
     dosimetric accuracy of synthetic CT images generated using a deep learning approach
-
+w
     Dissertation writer : Samaneh Kazemifar, Sarah McGuire, Robert Timmerman, Zabi Wardak,
                         Dan Nguyen, Yang Park, Steve Jiang, Amir Owrangi at Medical Artificial
                          Intelligence and Automation Laboratory, Department of Radiation Oncology,

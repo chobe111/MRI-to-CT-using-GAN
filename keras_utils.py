@@ -1,12 +1,12 @@
-import keras.layers
-from keras.layers import Conv2D
-from keras.layers import Conv2DTranspose
-from keras.layers import BatchNormalization
-from keras.layers import Dropout
-from keras.layers import MaxPooling2D
-from keras.layers import concatenate
-from keras.layers import Activation
-from keras.layers import Dense
+import tensorflow.keras.layers
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import Conv2DTranspose
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import MaxPooling2D
+from tensorflow.keras.layers import concatenate
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.layers import Dense
 from tensorflow.python.framework.ops import Tensor
 
 

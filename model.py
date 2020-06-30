@@ -46,13 +46,12 @@ class Discriminator(keras.models.Model):
         real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
         fake_loss = self.loss_obj(tf.zeros_like(fake_image), fake_image)
 
-        #
         total_loss = 0.5 * (real_loss + fake_loss)
 
         return total_loss
 
-    @staticmethod
-    def _networks(inputs):
+    @classmethod
+    def _networks(cls, inputs):
         conv1 = discriminator_conv(2, inputs)
         pool1 = MaxPooling2D((2, 2))(conv1)
         conv2 = discriminator_conv(4, pool1)
@@ -112,8 +111,8 @@ class Generator(keras.models.Model):
         # TODO : Use L1 or L2 loss
         return generated_loss
 
-    @staticmethod
-    def _networks(inputs):
+    @classmethod
+    def _networks(cls, inputs):
         batch1, pool1 = encoder_conv(32, inputs)
         batch2, pool2 = encoder_conv(64, pool1)
         batch3, pool3 = encoder_conv(128, pool2)
@@ -131,8 +130,8 @@ class Generator(keras.models.Model):
         return outputs
 
     # TODO : Create Mutual Information loss What is image Distribution
-    @staticmethod
-    def _mi_losses(y_true: Tensor, y_pred: Tensor) -> float:
+    @classmethod
+    def _mi_losses(cls, y_true: Tensor, y_pred: Tensor) -> float:
         """
         :param y_true: y_true is input CT
         :param y_pred: y_pred is synthesis CT from input MRI
