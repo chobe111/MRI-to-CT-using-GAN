@@ -5,28 +5,28 @@ from scipy import ndimage
 
 
 class GanLosses:
-    def __init__(self):
-        self.binary_loss_obj = BinaryCrossentropy(from_logits=True)
+    binary_loss_obj = BinaryCrossentropy(from_logits=True)
 
-    def discriminator_loss(self, real, generated):
-        real_loss = self.binary_loss_obj(tf.ones_like(real), real)
-        generated_image = self.binary_loss_obj(tf.zeros_like(generated), generated)
+    @classmethod
+    def discriminator_loss(cls, real, generated):
+        real_loss = cls.binary_loss_obj(tf.ones_like(real), real)
+        generated_image = cls.binary_loss_obj(tf.zeros_like(generated), generated)
 
         total_loss = 0.5 * (real_loss + generated_image)
 
         return total_loss
 
-    def generator_loss(self, real_image, generated_image):
+    @classmethod
+    def generator_loss(cls, real_image, generated_image):
 
-        generated_loss = self.binary_loss_obj(tf.ones_like(generated_image), generated_image)
+        generated_loss = cls.binary_loss_obj(tf.ones_like(generated_image), generated_image)
         # Regulation with MI_LOSS
-
-        mi_loss = self.mutual_information_2d(real_image.ravel(), generated_image.ravel())
+        mi_loss = cls.mutual_information_2d(real_image.ravel(), generated_image.ravel())
 
         return mi_loss + generated_loss
 
-    @staticmethod
-    def mutual_information_2d(x, y, sigma=1, normalized=False):
+    @classmethod
+    def mutual_information_2d(cls, x, y, sigma=1, normalized=False):
         EPS = np.finfo(float).eps
 
         bins = (256, 256)
