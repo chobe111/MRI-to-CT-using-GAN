@@ -9,8 +9,9 @@ from keras.layers import Flatten
 import tensorflow as tf
 
 
-class Mrigan:
+class MriGAN:
     def __init__(self):
+
         return
 
 
@@ -45,6 +46,7 @@ class Discriminator(keras.models.Model):
         real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
         fake_loss = self.loss_obj(tf.zeros_like(fake_image), fake_image)
 
+        #
         total_loss = 0.5 * (real_loss + fake_loss)
 
         return total_loss
