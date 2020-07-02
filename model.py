@@ -10,6 +10,8 @@ import tensorflow as tf
 
 from tensorflow import keras
 import tensorflow.keras.backend as K
+from utils import GanLosses
+from data_loader import DataLoader
 
 
 class MriGAN:
@@ -18,29 +20,32 @@ class MriGAN:
         self.img_shape = (256, 256, 1)
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
-
+        self.mutual_loss = GanLosses.mutual_information_2d
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
 
-    def gan_discriminator_net(self):
-        discriminator = Discriminator(self.img_shape)
+    def _gan_discriminator_net(self):
+        self.discriminator = Discriminator(self.img_shape)
+        self.discriminator.compile(loss='binary_crossentropy',
+                                   optimizer=self.discriminator_optimizer,
+                                   metrics=['accuracy'])
 
-        discriminator.compile(loss='binary_crossentropy',
-                              optimizer=self.discriminator_optimizer,
-                              metrics=['accuracy'])
+        self.generator = Generator(self.img_shape)
+        self.generator.compile(loss=[self._generator_mi_losses])
 
-        generator = Generator(self.img_shape)
+        self.z = keras.Input(shape=self.img_shape)
 
-        z = keras.Input(shape=self.img_shape)
+        # generated_image
+        self.img = self.generator(self.z)
 
-        img = generator(z)
+        self.discriminator.trainable = False
 
-        discriminator.trainable = False
+        self.valid = self.discriminator(self.img)
 
-        valid = discriminator(img)
+        self.combined_model = Model(self.z, self.valid)
 
-        combined_model = Model(z, valid)
-
-        combined_model.compile()
+        self.combined_model.compile(optimizer='adam',
+                                    loss='binary_crossentropy',
+                                    metrics=['accuracy'])
 
     def _discriminator_loss(self, real_image, fake_image):
         real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
@@ -61,6 +66,13 @@ class MriGAN:
         gen_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
 
         return gen_loss
+
+    def _train(self):
+        data_reader = DataLoader(self.data_path, name='data', image_size=self.img_size,
+                                 batch_size=self.flags.batch_size,
+                                 is_train=self.flags.is_train)
+
+        pass
 
 
 class Discriminator(keras.models.Model):
