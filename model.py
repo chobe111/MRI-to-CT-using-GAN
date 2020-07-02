@@ -1,54 +1,79 @@
-import keras.models
-import keras.layers
-import keras.optimizers
-from keras.models import Model
+import tensorflow.keras.models
+import tensorflow.keras.layers
+import tensorflow.keras.optimizers
+from tensorflow.keras.models import Model
 from keras_utils import *
-from keras.optimizers import Adam
-from keras.losses import mae
-from keras.layers import Flatten
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import mae
+from tensorflow.keras.layers import Flatten
 import tensorflow as tf
+
+from tensorflow import keras
+import tensorflow.keras.backend as K
 
 
 class MriGAN:
+
     def __init__(self):
+        self.img_shape = (256, 256, 1)
+        self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
+        self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
 
-        return
+        self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
 
+    def gan_discriminator_net(self):
+        discriminator = Discriminator(self.img_shape)
 
-class Discriminator(keras.models.Model):
-    """
-    This Discriminator model is implementation of MRI_only_brain_radiotherapy Discriminator
-    written by Samaneh Kazemifar
+        discriminator.compile(loss='binary_crossentropy',
+                              optimizer=self.discriminator_optimizer,
+                              metrics=['accuracy'])
 
-    input size = 352 * 352 * 1
+        generator = Generator(self.img_shape)
 
-    output_size = real_number 0 ~ 1
+        z = keras.Input(shape=self.img_shape)
 
-    learning_rate = 0.00005
-    beta_1 = 0.5
+        img = generator(z)
 
-    filter_size = 2 ->4 ->8 ->16 ->32 -> 64
-    6 convolution layers + 5 fully connected layers
-    """
+        discriminator.trainable = False
 
-    def __init__(self, input_size):
-        inputs = keras.layers.Input(input_size)
-        outputs = self._networks(inputs)
+        valid = discriminator(img)
 
-        self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
-        self.optimizer = Adam(lr=0.00005, beta_1=0.5)
-        super().__init__(
-            inputs=inputs,
-            outputs=outputs
-        )
+        combined_model = Model(z, valid)
 
-    def discriminator_loss(self, real_image, fake_image):
+        combined_model.compile()
+
+    def _discriminator_loss(self, real_image, fake_image):
         real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
         fake_loss = self.loss_obj(tf.zeros_like(fake_image), fake_image)
 
         total_loss = 0.5 * (real_loss + fake_loss)
 
         return total_loss
+
+    def _generator_mi_losses(self, real_image, generated_image):
+        eps = 1e-8
+        conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
+        entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
+
+        return conditional_entropy + entropy
+
+    def _generator_loss(self, generated_image):
+        gen_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
+
+        return gen_loss
+
+
+class Discriminator(keras.models.Model):
+
+    def __init__(self, input_size):
+        inputs = keras.layers.Input(input_size)
+        outputs = self._networks(inputs)
+
+        self.optimizer = Adam(lr=0.00005, beta_1=0.5)
+        super().__init__(
+            inputs=inputs,
+            outputs=outputs
+        )
 
     @classmethod
     def _networks(cls, inputs):
@@ -80,19 +105,6 @@ class Discriminator(keras.models.Model):
 
 
 class Generator(keras.models.Model):
-    """
-    input_size = (512,512,1) gray scale
-
-    This Generator model is implementation of MRI_only_brain_radiotherapy Generator
-    written by Samaneh Kazemifar
-
-    loss function is MI optimizer is Adam with learning_rate=0.0002, beta_1 = 0.5
-
-    MI(Mutual Information) In probability theory and information theory,
-    the mutual information (MI) of two random variables is a measure of the mutual dependence between the two variables.
-
-    """
-
     def __init__(self, input_size, *args, **kwargs):
         inputs = keras.layers.Input(input_size)
         outputs = self._networks(inputs)
@@ -128,16 +140,6 @@ class Generator(keras.models.Model):
 
         outputs = generator_final_layer(32, up5, batch1)
         return outputs
-
-    # TODO : Create Mutual Information loss What is image Distribution
-    @classmethod
-    def _mi_losses(cls, y_true: Tensor, y_pred: Tensor) -> float:
-        """
-        :param y_true: y_true is input CT
-        :param y_pred: y_pred is synthesis CT from input MRI
-        :return: MI Information
-        """
-        pass
 
     def __call__(self, *args, **kwargs):
         return self
