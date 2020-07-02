@@ -7,7 +7,6 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import mae
 from tensorflow.keras.layers import Flatten
 import tensorflow as tf
-
 from tensorflow import keras
 import tensorflow.keras.backend as K
 from utils import GanLosses
@@ -21,6 +20,7 @@ class MriGAN:
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
         self.mutual_loss = GanLosses.mutual_information_2d
+
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
 
     def _gan_discriminator_net(self):
@@ -37,6 +37,7 @@ class MriGAN:
         # generated_image
         self.img = self.generator(self.z)
 
+        # set discriminator trainable false to train generator
         self.discriminator.trainable = False
 
         self.valid = self.discriminator(self.img)
@@ -68,10 +69,23 @@ class MriGAN:
         return gen_loss
 
     def train(self, dataset):
-        data_reader = DataLoader(dataset, name='data', image_size=self.img_size,
+        data_reader = DataLoader(dataset,
+                                 name='data',
+                                 image_size=self.img_size,
                                  batch_size=self.flags.batch_size,
-                                 is_train=self.flags.is_train)
+                                 is_train=self.flags.is_train,
+                                 min_queue_examples=1000)
 
+        input_ct, input_mr = data_reader.feed()
+
+        # define three model generator, discriminator, combine_model
+        self._gan_discriminator_net()
+
+        generator = self.generator
+        discriminator = self.discriminator
+        combine = self.combined_model
+
+        # train discriminator
         pass
 
 
@@ -82,6 +96,7 @@ class Discriminator(keras.models.Model):
         outputs = self._networks(inputs)
 
         self.optimizer = Adam(lr=0.00005, beta_1=0.5)
+
         super().__init__(
             inputs=inputs,
             outputs=outputs

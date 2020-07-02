@@ -5,7 +5,11 @@ import time
 
 
 class DataLoader:
-    def __init__(self, dataset, image_size=(256, 256, 1), batch_size=32, is_train=True):
+    def __init__(self, dataset, image_size=(256, 256, 1),
+                 batch_size=32,
+                 is_train=True,
+                 name='',
+                 min_queue_examples=1000):
         self.ori_img_size = image_size
         self.pair_img_size = (image_size.shape[0], image_size.shape[1] * 2, image_size.shape[2])
         self.dataset = dataset
@@ -18,13 +22,13 @@ class DataLoader:
             if self.is_train:
                 # return iterator object
                 train_image_batch_tensor_iterator = parsed_image_dataset \
-                    .shuffle(self.min_queue_examples).repeat(20).batch(self.batch_size).make_initializable_iterator()
+                    .shuffle(self.min_queue_examples).repeat(1).batch(self.batch_size).make_one_shot_iterator()
 
                 return train_image_batch_tensor_iterator
             else:
                 # return iterator object
                 test_image_batch_tensor_iterator = parsed_image_dataset \
-                    .batch(self.batch_size).make_initializable_iterator()
+                    .batch(self.batch_size).repeat(1).make_one_shot_iterator()
 
                 return test_image_batch_tensor_iterator
 
@@ -46,7 +50,7 @@ class DataLoader:
         # Resize to 2D and split to left and right image
         img = tf.image.resize(img, size=(self.image_size[0], self.image_size[1]))
         x_img_ori, y_img_ori = tf.split(img, [self.ori_img_size[1], self.ori_img_size[1]], axis=1)
-
+        # x = CT y = MR
         x_img, y_img = x_img_ori, y_img_ori
         # Data augmentation
         if is_train:
@@ -55,6 +59,7 @@ class DataLoader:
             # Make image bigger
             x_img = tf.image.resize(x_img_ori, size=(int(self.resize_factor * self.ori_img_size[0]),
                                                      int(self.resize_factor * self.ori_img_size[1])))
+
             y_img = tf.image.resize(y_img_ori, size=(int(self.resize_factor * self.ori_img_size[0]),
                                                      int(self.resize_factor * self.ori_img_size[1])))
 
