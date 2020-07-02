@@ -67,8 +67,8 @@ class MriGAN:
 
         return gen_loss
 
-    def _train(self):
-        data_reader = DataLoader(self.data_path, name='data', image_size=self.img_size,
+    def train(self, dataset):
+        data_reader = DataLoader(dataset, name='data', image_size=self.img_size,
                                  batch_size=self.flags.batch_size,
                                  is_train=self.flags.is_train)
 
