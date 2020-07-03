@@ -11,6 +11,7 @@ from tensorflow import keras
 import tensorflow.keras.backend as K
 from utils import GanLosses
 from data_loader import DataLoader
+import numpy as np
 
 
 class MriGAN:
@@ -20,7 +21,6 @@ class MriGAN:
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
         self.mutual_loss = GanLosses.mutual_information_2d
-
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
 
     def _gan_discriminator_net(self):
@@ -30,16 +30,15 @@ class MriGAN:
                                    metrics=['accuracy'])
 
         self.generator = Generator(self.img_shape)
-        self.generator.compile(loss=[self._generator_mi_losses])
+        self.generator.compile(loss=[self._generator_mi_losses],
+                               optimizer=self.generator_optimizer,
+                               metrics=['accuracy'])
 
         self.z = keras.Input(shape=self.img_shape)
-
         # generated_image
         self.img = self.generator(self.z)
-
         # set discriminator trainable false to train generator
         self.discriminator.trainable = False
-
         self.valid = self.discriminator(self.img)
 
         self.combined_model = Model(self.z, self.valid)
@@ -68,7 +67,7 @@ class MriGAN:
 
         return gen_loss
 
-    def train(self, dataset):
+    def train(self, dataset, iter_num):
         data_reader = DataLoader(dataset,
                                  name='data',
                                  image_size=self.img_size,
@@ -76,17 +75,30 @@ class MriGAN:
                                  is_train=self.flags.is_train,
                                  min_queue_examples=1000)
 
-        input_ct, input_mr = data_reader.feed()
+        # return batch size 32
 
-        # define three model generator, discriminator, combine_model
-        self._gan_discriminator_net()
+        batch_image_gen = data_reader.feed()
 
-        generator = self.generator
-        discriminator = self.discriminator
-        combine = self.combined_model
+        # batch_image_gen returns x_img, y_img, x_img_ori, y_img_ori, image_name_buffer
 
-        # train discriminator
-        pass
+        for epoch in range(iter_num):
+            img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_image_gen.get_next()
+
+            valid = np.ones(img_ct.shape)
+            fake = np.zeros(img_ct.shape)
+
+            gen_ct = self.generator.predict(img_mr)
+
+            #           train discriminator
+
+            d_loss_real = self.discriminator.train_on_batch(img_ct, valid)
+            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake)
+
+            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+            g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct)
+
+            g_loss = self.combined_model.train_on_batch(gen_ct, valid)
 
 
 class Discriminator(keras.models.Model):
