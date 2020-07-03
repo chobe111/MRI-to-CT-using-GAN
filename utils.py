@@ -11,18 +11,14 @@ class GanLosses:
     def discriminator_loss(cls, real, generated):
         real_loss = cls.binary_loss_obj(tf.ones_like(real), real)
         generated_image = cls.binary_loss_obj(tf.zeros_like(generated), generated)
-
         total_loss = 0.5 * (real_loss + generated_image)
-
         return total_loss
 
     @classmethod
     def generator_loss(cls, real_image, generated_image):
-
         generated_loss = cls.binary_loss_obj(tf.ones_like(generated_image), generated_image)
         # Regulation with MI_LOSS
         mi_loss = cls.mutual_information_2d(real_image.ravel(), generated_image.ravel())
-
         return mi_loss + generated_loss
 
     @classmethod
