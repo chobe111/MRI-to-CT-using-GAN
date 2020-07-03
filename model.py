@@ -12,9 +12,21 @@ import tensorflow.keras.backend as K
 from utils import GanLosses
 from data_loader import DataLoader
 import numpy as np
+import time
 
 
 class MriGAN:
+
+    def _get_session(self):
+
+        return self.sess
+
+    def _set_session(self):
+
+        run_config = tf.compat.v1.ConfigProto()
+        run_config.gpu_options.allow_growth = True
+
+        self.sess = tf.compat.v1.Session(config=run_config)
 
     def __init__(self, **kwargs):
 
@@ -31,10 +43,10 @@ class MriGAN:
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
         self.mutual_loss = GanLosses.mutual_information_2d
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
+        self.save_iter = 500
+        self.sample_image_output_path = "../tc2mResults"
 
-        run_config = tf.compat.v1.ConfigProto()
-        run_config.gpu_options.allow_growth = True
-        self.sess = tf.compat.v1.Session(config=run_config)
+        self._set_session()
 
     def _gan_discriminator_net(self):
         self.discriminator = Discriminator(self.img_shape)
@@ -97,36 +109,56 @@ class MriGAN:
         for epoch in range(iter_num):
             img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_image_gen.get_next()
 
-            valid_tensor = tf.ones((self.batch_size, img_ct.shape[0], img_ct.shape[1], img_ct.shape[2]))
-            fake_tensor = tf.zeros((self.batch_size, img_ct.shape[0], img_ct.shape[1], img_ct.shape[2]))
+            # img_ct is tensor shape is ? * 256 * 256 * 1 in this case ? is 32
+
+            img_ct_np_arr = self.sess.run(img_ct)
+
+            valid_tensor = tf.ones((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
+            fake_tensor = tf.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
             #           train discriminator
+
+            valid_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
+            fake_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
 
             gen_ct = self.generator.predict(img_mr)
 
+            # gen_ct is may be 32 * 256 * 256 * 1 numpy array
+
+            # train on discriminator
             d_loss_real = self.discriminator.train_on_batch(img_ct, valid_tensor)
-            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake_tensor)
+            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake_np_arr)
 
             d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+            # train on generator
 
             g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct)
 
             g_loss = self.combined_model.train_on_batch(gen_ct, valid_tensor)
 
-            self.sampling()
-            if epoch % 100 == 0:
+            if epoch % self.save_iter == 0:
                 print("%d epoch d_loss = %.2f g_mi_loss = %f g_loss = %f" % (epoch, d_loss[0], g_mi_loss, g_loss))
+                self.sampling(epoch, img_mr, img_ct, gen_ct)
 
-    @staticmethod
-    def sampling_images():
+    def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
+        mri_batch_image, ct_batch_image, gen_ct_batch_image = self.sess.run(
+            [mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor])
+
+        # return batch image type is numpy array
+        return [mri_batch_image, ct_batch_image, gen_ct_batch_image]
+
+    def sampling(self, epoch, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
+        images = self.sampling_images(mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor)
+
         pass
 
     @staticmethod
-    def sampling():
+    def plots(imgs, iter_time, image_size, ):
 
         pass
 
     @staticmethod
-    def _save_img(mr_img, ct_img, gen_ct_img):
+    def _save_model(mr_img, ct_img, gen_ct_img):
 
         pass
 
@@ -137,6 +169,7 @@ class Discriminator(keras.models.Model):
         inputs = keras.layers.Input(input_size)
         outputs = self._networks(inputs)
         self.optimizer = Adam(lr=0.00005, beta_1=0.5)
+
         super().__init__(
             inputs=inputs,
             outputs=outputs

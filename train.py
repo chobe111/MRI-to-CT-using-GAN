@@ -7,7 +7,7 @@ def main():
     dataset = BrainM2C()
 
     print("start train model")
-    model.train(dataset, iter_num=10000)
+    model.train(dataset, iter_num=501)
 
     print("train model end")
 
