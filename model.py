@@ -16,12 +16,25 @@ import numpy as np
 
 class MriGAN:
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+
+        for key, value in kwargs.items():
+            if key == 'is_train':
+                self.is_train = value
+
+            if key == 'batch_size':
+                self.batch_size = value
+
         self.img_shape = (256, 256, 1)
+        self.img_size = (256, 256, 1)
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
         self.mutual_loss = GanLosses.mutual_information_2d
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
+
+        run_config = tf.compat.v1.ConfigProto()
+        run_config.gpu_options.allow_growth = True
+        self.sess = tf.compat.v1.Session(config=run_config)
 
     def _gan_discriminator_net(self):
         self.discriminator = Discriminator(self.img_shape)
@@ -71,8 +84,8 @@ class MriGAN:
         data_reader = DataLoader(dataset,
                                  name='data',
                                  image_size=self.img_size,
-                                 batch_size=self.flags.batch_size,
-                                 is_train=self.flags.is_train,
+                                 batch_size=self.batch_size,
+                                 is_train=self.is_train,
                                  min_queue_examples=1000)
 
         # return batch size 32
@@ -84,21 +97,38 @@ class MriGAN:
         for epoch in range(iter_num):
             img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_image_gen.get_next()
 
-            valid = np.ones(img_ct.shape)
-            fake = np.zeros(img_ct.shape)
+            valid_tensor = tf.ones((self.batch_size, img_ct.shape[0], img_ct.shape[1], img_ct.shape[2]))
+            fake_tensor = tf.zeros((self.batch_size, img_ct.shape[0], img_ct.shape[1], img_ct.shape[2]))
+            #           train discriminator
 
             gen_ct = self.generator.predict(img_mr)
 
-            #           train discriminator
-
-            d_loss_real = self.discriminator.train_on_batch(img_ct, valid)
-            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake)
+            d_loss_real = self.discriminator.train_on_batch(img_ct, valid_tensor)
+            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake_tensor)
 
             d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
             g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct)
 
-            g_loss = self.combined_model.train_on_batch(gen_ct, valid)
+            g_loss = self.combined_model.train_on_batch(gen_ct, valid_tensor)
+
+            self.sampling()
+            if epoch % 100 == 0:
+                print("%d epoch d_loss = %.2f g_mi_loss = %f g_loss = %f" % (epoch, d_loss[0], g_mi_loss, g_loss))
+
+    @staticmethod
+    def sampling_images():
+        pass
+
+    @staticmethod
+    def sampling():
+
+        pass
+
+    @staticmethod
+    def _save_img(mr_img, ct_img, gen_ct_img):
+
+        pass
 
 
 class Discriminator(keras.models.Model):
@@ -106,9 +136,7 @@ class Discriminator(keras.models.Model):
     def __init__(self, input_size):
         inputs = keras.layers.Input(input_size)
         outputs = self._networks(inputs)
-
         self.optimizer = Adam(lr=0.00005, beta_1=0.5)
-
         super().__init__(
             inputs=inputs,
             outputs=outputs
@@ -116,25 +144,26 @@ class Discriminator(keras.models.Model):
 
     @classmethod
     def _networks(cls, inputs):
-        conv1 = discriminator_conv(2, inputs)
-        pool1 = MaxPooling2D((2, 2))(conv1)
-        conv2 = discriminator_conv(4, pool1)
-        conv3 = discriminator_conv(8, conv2)
-        conv4 = discriminator_conv(16, conv3)
-        conv5 = discriminator_conv(32, conv4)
-        conv6 = discriminator_conv(64, conv5)
+        with tf.variable_scope('discriminator') as scope:
+            conv1 = discriminator_conv(2, inputs)
+            pool1 = MaxPooling2D((2, 2))(conv1)
+            conv2 = discriminator_conv(4, pool1)
+            conv3 = discriminator_conv(8, conv2)
+            conv4 = discriminator_conv(16, conv3)
+            conv5 = discriminator_conv(32, conv4)
+            conv6 = discriminator_conv(64, conv5)
 
-        flat = Flatten()(conv6)
+            flat = Flatten()(conv6)
 
-        dense1 = discriminator_dense(8 * 8 * 64, flat)
-        dense2 = discriminator_dense(4068, dense1)
-        dense3 = discriminator_dense(2048, dense2)
-        dense4 = discriminator_dense(1024, dense3)
-        dense5 = discriminator_dense(512, dense4)
+            dense1 = discriminator_dense(8 * 8 * 64, flat)
+            dense2 = discriminator_dense(4068, dense1)
+            dense3 = discriminator_dense(2048, dense2)
+            dense4 = discriminator_dense(1024, dense3)
+            dense5 = discriminator_dense(512, dense4)
 
-        final_layer = discriminator_final_layer(dense5)
+            final_layer = discriminator_final_layer(dense5)
 
-        return final_layer
+            return final_layer
 
     def _load_data(self):
         return
@@ -164,21 +193,22 @@ class Generator(keras.models.Model):
 
     @classmethod
     def _networks(cls, inputs):
-        batch1, pool1 = encoder_conv(32, inputs)
-        batch2, pool2 = encoder_conv(64, pool1)
-        batch3, pool3 = encoder_conv(128, pool2)
-        batch4, pool4 = encoder_conv(256, pool3)
-        batch5, pool5 = encoder_conv(512, pool4)
+        with tf.variable_scope('generator') as scope:
+            batch1, pool1 = encoder_conv(32, inputs)
+            batch2, pool2 = encoder_conv(64, pool1)
+            batch3, pool3 = encoder_conv(128, pool2)
+            batch4, pool4 = encoder_conv(256, pool3)
+            batch5, pool5 = encoder_conv(512, pool4)
 
-        up1 = encoder_to_decoder_conv(1024, pool5)
+            up1 = encoder_to_decoder_conv(1024, pool5)
 
-        up2 = decoder_conv(512, up1, batch5)
-        up3 = decoder_conv(256, up2, batch4)
-        up4 = decoder_conv(128, up3, batch3)
-        up5 = decoder_conv(64, up4, batch2)
+            up2 = decoder_conv(512, up1, batch5)
+            up3 = decoder_conv(256, up2, batch4)
+            up4 = decoder_conv(128, up3, batch3)
+            up5 = decoder_conv(64, up4, batch2)
 
-        outputs = generator_final_layer(32, up5, batch1)
-        return outputs
+            outputs = generator_final_layer(32, up5, batch1)
+            return outputs
 
     def __call__(self, *args, **kwargs):
         return self

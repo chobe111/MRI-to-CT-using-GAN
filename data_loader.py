@@ -10,15 +10,25 @@ class DataLoader:
                  is_train=True,
                  name='',
                  min_queue_examples=1000):
+
         self.ori_img_size = image_size
         self.pair_img_size = (image_size.shape[0], image_size.shape[1] * 2, image_size.shape[2])
         self.dataset = dataset
-        pass
+        self.resize_factor = 1.05
+        self.rotate_angle = 5.
+        self.is_train = is_train
+        self.name = name
+        self.min_queue_example = min_queue_examples
+        self.batch_size = batch_size
+
+        self.image_features = {
+            'image/file_name': tf.io.FixedLenFeature([], tf.string),
+            'image/encoded_image': tf.io.FixedLenFeature([], tf.string)
+        }
 
     def feed(self):
         with tf.name_scope(self.name):
             parsed_image_dataset = self.dataset.map(self._parse_image_function)
-
             if self.is_train:
                 # return iterator object
                 train_image_batch_tensor_iterator = parsed_image_dataset \
