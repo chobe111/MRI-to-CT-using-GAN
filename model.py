@@ -16,11 +16,6 @@ import time
 
 
 class MriGAN:
-
-    def _get_session(self):
-
-        return self.sess
-
     def _set_session(self):
 
         run_config = tf.compat.v1.ConfigProto()
@@ -28,14 +23,7 @@ class MriGAN:
 
         self.sess = tf.compat.v1.Session(config=run_config)
 
-    def __init__(self, **kwargs):
-
-        for key, value in kwargs.items():
-            if key == 'is_train':
-                self.is_train = value
-
-            if key == 'batch_size':
-                self.batch_size = value
+    def __init__(self, sess, flags):
 
         self.img_shape = (256, 256, 1)
         self.img_size = (256, 256, 1)
@@ -48,29 +36,35 @@ class MriGAN:
 
         self._set_session()
 
-    def _gan_discriminator_net(self):
+    def _set_discriminator(self):
         self.discriminator = Discriminator(self.img_shape)
         self.discriminator.compile(loss='binary_crossentropy',
                                    optimizer=self.discriminator_optimizer,
                                    metrics=['accuracy'])
 
+    def _set_generator(self):
         self.generator = Generator(self.img_shape)
-        self.generator.compile(loss=[self._generator_mi_losses],
+        self.generator.compile(loss=[self.mutual_loss],
                                optimizer=self.generator_optimizer,
                                metrics=['accuracy'])
 
-        self.z = keras.Input(shape=self.img_shape)
-        # generated_image
-        self.img = self.generator(self.z)
-        # set discriminator trainable false to train generator
-        self.discriminator.trainable = False
-        self.valid = self.discriminator(self.img)
-
-        self.combined_model = Model(self.z, self.valid)
-
+    def _set_combined_model(self):
+        self.combined_model = Model(self.input, self.valid)
         self.combined_model.compile(optimizer='adam',
                                     loss='binary_crossentropy',
                                     metrics=['accuracy'])
+
+    def _combined_generator_discriminator(self):
+        self.input = keras.Input(shape=self.img_shape)
+        self.gen_img = self.generator(self.input)
+        self.discriminator.trainable = False
+        self.valid = self.discriminator(self.gen_img)
+
+    def _gan_discriminator_net(self):
+        self._set_discriminator()
+        self._set_generator()
+        self._combined_generator_discriminator()
+        self._set_combined_model()
 
     def _discriminator_loss(self, real_image, fake_image):
         real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
@@ -80,12 +74,12 @@ class MriGAN:
 
         return total_loss
 
-    def _generator_mi_losses(self, real_image, generated_image):
-        eps = 1e-8
-        conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
-        entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
-
-        return conditional_entropy + entropy
+    # def _generator_mi_losses(self, real_image, generated_image):
+    #     eps = 1e-8
+    #     conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
+    #     entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
+    #
+    #     return conditional_entropy + entropy
 
     def _generator_loss(self, generated_image):
         gen_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
