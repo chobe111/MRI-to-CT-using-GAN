@@ -5,7 +5,7 @@ from tensorflow.keras.models import Model
 from keras_utils import *
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import mae
-from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Flatten,MaxPooling2D
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
