@@ -5,7 +5,7 @@ from tensorflow.keras.models import Model
 from keras_utils import *
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import mae
-from tensorflow.keras.layers import Flatten,MaxPooling2D
+from tensorflow.keras.layers import Flatten, MaxPooling2D
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
@@ -13,18 +13,15 @@ from utils import GanLosses
 from data_loader import DataLoader
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+import matplotlib.gridspec
 
 
 class MriGAN:
-    def _set_session(self):
-
-        run_config = tf.compat.v1.ConfigProto()
-        run_config.gpu_options.allow_growth = True
-
-        self.sess = tf.compat.v1.Session(config=run_config)
-
     def __init__(self, sess, flags):
 
+        self.flags = flags
+        self.sess = sess
         self.img_shape = (256, 256, 1)
         self.img_size = (256, 256, 1)
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
@@ -32,9 +29,8 @@ class MriGAN:
         self.mutual_loss = GanLosses.mutual_information_2d
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
         self.save_iter = 500
+        self.batch_size = flags.batch_size
         self.sample_image_output_path = "../tc2mResults"
-
-        self._set_session()
 
     def _set_discriminator(self):
         self.discriminator = Discriminator(self.img_shape)
@@ -147,7 +143,29 @@ class MriGAN:
         pass
 
     @staticmethod
-    def plots(imgs, iter_time, image_size, ):
+    def plots(imgs, iter_time, image_size, save_file):
+        scale, margin = 0.02, 0.02
+        n_cols, n_rows = len(imgs), imgs[0].shape[0]
+        cell_size_h, cell_size_w = imgs[0].shape[1] * scale, imgs[0].shape[2] * scale
+
+        fig = plt.figure(figsize=(cell_size_w * n_cols, cell_size_h * n_rows))  # (column, row)
+        gs = gridspec.GridSpec(n_rows, n_cols)  # (row, column)
+        gs.update(wspace=margin, hspace=margin)
+
+        imgs = [utils.inverse_transform(imgs[idx]) for idx in range(len(imgs))]
+
+        # save more bigger image
+        for col_index in range(n_cols):
+            for row_index in range(n_rows):
+                ax = plt.subplot(gs[row_index * n_cols + col_index])
+                plt.axis('off')
+                ax.set_xticklabels([])
+                ax.set_yticklabels([])
+                ax.set_aspect('equal')
+                plt.imshow((imgs[col_index][row_index]).reshape(image_size[0], image_size[1]), cmap='Greys_r')
+
+        plt.savefig(save_file + '/sample_{}.png'.format(str(iter_time).zfill(5)), bbox_inches='tight')
+        plt.close(fig)
 
         pass
 
