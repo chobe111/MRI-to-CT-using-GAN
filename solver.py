@@ -83,3 +83,8 @@ class Solver:
         self.logger_base_path = "../logging/{}/{}".format(self.flags.dataset, self.cur_time)
         if not os.path.isdir(self.logger_base_path):
             os.makedirs(self.logger_base_path)
+
+    def _save_models(self):
+
+        pass
+

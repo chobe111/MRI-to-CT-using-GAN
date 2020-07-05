@@ -13,6 +13,7 @@ tf.flags.DEFINE_string('test_dataset_path', '../tc2mData/train/tfrecords/train.t
                        'define train tensorflow records data path')
 tf.flags.DEFINE_string('train_dataset_path', '../tc2mData/test/tfrecords/test.tfrecords',
                        'define test tensorflow records data path')
+tf.flags.DEFINE_string('save model output path', None, 'folder or save model to continue learning default = None')
 
 
 def main():
