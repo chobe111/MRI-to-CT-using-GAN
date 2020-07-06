@@ -1,8 +1,5 @@
 import tensorflow as tf
-import numpy as np
 import datetime
-import time
-import os
 import logging
 from dataset import dataset
 from model import MriGAN
@@ -90,7 +87,7 @@ class Solver:
 
         for epoch in range(self.epochs):
             images = self.model.train_steps(epoch, steps_per_epoch, self.batch_image_generator)
-            self.plots(epoch, )
+            self.plots(images, epoch, (256, 256, 1), self.sample_base_path)
 
     @staticmethod
     def plots(imgs, iter_time, image_size, save_file):
