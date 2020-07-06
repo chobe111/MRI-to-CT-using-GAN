@@ -4,6 +4,7 @@ import numpy as np
 from scipy import ndimage
 import os
 
+
 class GanLosses:
     binary_loss_obj = BinaryCrossentropy(from_logits=True)
 
