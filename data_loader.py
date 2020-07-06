@@ -12,7 +12,7 @@ class DataLoader:
                  name='data'):
 
         self.ori_img_size = image_size
-        self.pair_img_size = (image_size.shape[0], image_size.shape[1] * 2, image_size.shape[2])
+        self.pair_img_size = (self.ori_img_size.shape[0], self.ori_img_size.shape[1] * 2, self.ori_img_size.shape[2])
         self.dataset = dataset
         self.resize_factor = 1.05
         self.rotate_angle = 5.
@@ -47,7 +47,7 @@ class DataLoader:
         image_buffer = features['image/encoded_image']
         image_name_buffer = features['image/file_name']
 
-        image = tf.image.decode_jpeg(image_buffer, channels=self.image_size[2])
+        image = tf.image.decode_jpeg(image_buffer, channels=self.ori_img_size[2])
 
         x_img, y_img, x_img_ori, y_img_ori = self._preprocess(image, is_train=self.is_train)
 
@@ -58,7 +58,7 @@ class DataLoader:
 
     def _preprocess(self, img, is_train):
         # Resize to 2D and split to left and right image
-        img = tf.image.resize(img, size=(self.image_size[0], self.image_size[1]))
+        img = tf.image.resize(img, size=(self.pair_img_size[0], self.pair_img_size[1]))
         x_img_ori, y_img_ori = tf.split(img, [self.ori_img_size[1], self.ori_img_size[1]], axis=1)
         # x = CT y = MR
         x_img, y_img = x_img_ori, y_img_ori
