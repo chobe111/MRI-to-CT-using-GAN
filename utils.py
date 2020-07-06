@@ -2,7 +2,7 @@ from keras.losses import BinaryCrossentropy
 import tensorflow as tf
 import numpy as np
 from scipy import ndimage
-
+import os
 
 class GanLosses:
     binary_loss_obj = BinaryCrossentropy(from_logits=True)
@@ -52,3 +52,8 @@ class GanLosses:
 
     def __call__(self, name):
         pass
+
+
+def maybe_mkdirs(path):
+    if not os.path.isdir(path):
+        os.makedirs(path)

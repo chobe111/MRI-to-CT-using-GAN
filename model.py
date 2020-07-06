@@ -5,17 +5,12 @@ from matplotlib import gridspec
 from tensorflow.keras.models import Model
 from keras_utils import *
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.losses import mae
 from tensorflow.keras.layers import Flatten, MaxPooling2D
 import tensorflow as tf
 from tensorflow import keras
-import tensorflow.keras.backend as K
 from utils import GanLosses
-from data_loader import DataLoader
 import numpy as np
-import time
 import matplotlib.pyplot as plt
-import matplotlib.gridspec
 
 
 class MriGAN:
@@ -83,53 +78,31 @@ class MriGAN:
 
         return gen_loss
 
-    def train(self, dataset, iter_num):
-        data_reader = DataLoader(dataset,
-                                 name='data',
-                                 image_size=self.img_size,
-                                 batch_size=self.batch_size,
-                                 is_train=self.is_train,
-                                 min_queue_examples=1000)
+    def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
 
-        # return batch size 32
-
-        batch_image_gen = data_reader.feed()
-
-        # batch_image_gen returns x_img, y_img, x_img_ori, y_img_ori, image_name_buffer
-
-        for epoch in range(iter_num):
-            img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_image_gen.get_next()
-
-            # img_ct is tensor shape is ? * 256 * 256 * 1 in this case ? is 32
+        for steps in range(steps_per_epochs):
+            img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
 
             img_ct_np_arr = self.sess.run(img_ct)
 
             valid_tensor = tf.ones((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
             fake_tensor = tf.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
-            #           train discriminator
 
             valid_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
             fake_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
 
             gen_ct = self.generator.predict(img_mr)
 
-            # gen_ct is may be 32 * 256 * 256 * 1 numpy array
-
-            # train on discriminator
             d_loss_real = self.discriminator.train_on_batch(img_ct, valid_tensor)
             d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake_np_arr)
 
-            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+            d_total_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
-            # train on generator
+            g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct_np_arr)
 
-            g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct)
-
-            g_loss = self.combined_model.train_on_batch(gen_ct, valid_tensor)
-
-            if epoch % self.save_iter == 0:
-                print("%d epoch d_loss = %.2f g_mi_loss = %f g_loss = %f" % (epoch, d_loss[0], g_mi_loss, g_loss))
-                self.sampling(epoch, img_mr, img_ct, gen_ct)
+            g_loss = self.combined_model.train_on_batch(gen_ct, valid_np_arr)
+            if steps == steps_per_epochs - 1:
+                return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
 
     def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
         mri_batch_image, ct_batch_image, gen_ct_batch_image = self.sess.run(
@@ -140,8 +113,7 @@ class MriGAN:
 
     def sampling(self, epoch, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
         images = self.sampling_images(mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor)
-
-        pass
+        return images
 
     @staticmethod
     def plots(imgs, iter_time, image_size, save_file):
@@ -167,8 +139,6 @@ class MriGAN:
 
         plt.savefig(save_file + '/sample_{}.png'.format(str(iter_time).zfill(5)), bbox_inches='tight')
         plt.close(fig)
-
-        pass
 
     @staticmethod
     def _save_model(mr_img, ct_img, gen_ct_img):

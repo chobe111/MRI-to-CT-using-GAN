@@ -4,14 +4,22 @@ import tensorflow as tf
 
 
 class BrainM2C(object):
+
+    def _set_train_data_len(self):
+        cnt = 0
+        for record in tf.python_io.tf_record_iterator(self.train_tf_records_path):
+            cnt += 1
+
+        self.train_data_len = cnt
+
     def __init__(self, flags):
         self.name = 'brainM2C'
         self.image_size = (256, 256, 1)
-        self.num_tests = 244
 
         self.train_tf_records_path = flags.train_dataset_path
         self.test_tf_records_path = flags.test_dataset_path
 
+        self._set_train_data_len()
         self.raw_image_train_dataset = tf.data.TFRecordDataset(self.train_tf_records_path)
         self.raw_image_test_dataset = tf.data.TFRecordDataset(self.test_tf_records_path)
 
@@ -27,6 +35,9 @@ class BrainM2C(object):
                 sys.exit('Test tfrecord file is not found....')
 
             return self.raw_image_test_dataset
+
+    def __len__(self):
+        return self.train_data_len
 
 
 def dataset(flags):

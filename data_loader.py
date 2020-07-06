@@ -8,8 +8,8 @@ class DataLoader:
     def __init__(self, dataset, image_size=(256, 256, 1),
                  batch_size=32,
                  is_train=True,
-                 name='',
-                 min_queue_examples=1000):
+                 epoch=1000,
+                 name='data'):
 
         self.ori_img_size = image_size
         self.pair_img_size = (image_size.shape[0], image_size.shape[1] * 2, image_size.shape[2])
@@ -18,8 +18,9 @@ class DataLoader:
         self.rotate_angle = 5.
         self.is_train = is_train
         self.name = name
-        self.min_queue_example = min_queue_examples
         self.batch_size = batch_size
+        self.epoch = 1000
+        self.min_queue_examples = len(dataset) * 2
 
         self.image_features = {
             'image/file_name': tf.io.FixedLenFeature([], tf.string),
@@ -32,8 +33,7 @@ class DataLoader:
             if self.is_train:
                 # return iterator object
                 train_image_batch_tensor_iterator = parsed_image_dataset \
-                    .shuffle(self.min_queue_examples).repeat(1).batch(self.batch_size).make_one_shot_iterator()
-
+                    .shuffle(self.min_queue_examples).repeat(self.epoch).batch(self.batch_size).make_one_shot_iterator()
                 return train_image_batch_tensor_iterator
             else:
                 # return iterator object
