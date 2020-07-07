@@ -36,6 +36,9 @@ def inverse_transform(img):
 
 
 def mutual_information_2d(x, y):
+    x = x.ravel()
+    y = y.ravel()
+
     sigma = 1
     normalized = False
     EPS = np.finfo(float).eps
@@ -63,4 +66,4 @@ def mutual_information_2d(x, y):
         mi = (np.sum(jh * np.log(jh)) - np.sum(s1 * np.log(s1))
               - np.sum(s2 * np.log(s2)))
 
-    return mi
+    return -mi
