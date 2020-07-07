@@ -4,7 +4,7 @@ import logging
 from dataset import dataset
 from model import MriGAN
 import os
-from utils import maybe_mkdirs
+from utils import maybe_mkdirs,inverse_transform
 from data_loader import DataLoader
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -46,7 +46,6 @@ class Solver:
         self.logger.info("is_train = {}".format(self.flags.is_train))
         self.logger.info("dataset name = {}".format(self.flags.dataset))
         self.logger.info("batch size = {}".format(self.flags.batch_size))
-        self.logger.info("iter number = {}".format(self.flags.iter_num))
         self.logger.info("mode = {}".format(self.flags.mode))
         self.logger.info("test data path = {}".format(self.flags.test_dataset_path))
         self.logger.info("train data path = {}".format(self.flags.train_dataset_path))
@@ -68,26 +67,25 @@ class Solver:
         self.is_train = self.flags.is_train
         self.batch_size = self.flags.batch_size
         self.epochs = self.flags.epoch
-        self._set_batch_image_generator()
         self._set_session()
-
         self.model = MriGAN(self.sess, flags)
-        self.dataset = dataset(flags)
 
-        self.iter_num = flags.iter_num
+        self.dataset = dataset(flags)
+        self._set_batch_image_generator()
+
         self.cur_time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.set_needed_folder()
         self._init_logger()
 
-        self.saver = tf.compat.v1.train.Saver(max_to_keep=2)
         self.sess.run(tf.global_variables_initializer())
 
     def train(self):
         steps_per_epoch = len(self.dataset) / self.batch_size
 
         for epoch in range(self.epochs):
-            images = self.model.train_steps(epoch, steps_per_epoch, self.batch_image_generator)
+            images = self.model.train_steps(epoch, int(steps_per_epoch), self.batch_image_generator)
             self.plots(images, epoch, (256, 256, 1), self.sample_base_path)
+
 
     @staticmethod
     def plots(imgs, iter_time, image_size, save_file):
@@ -100,7 +98,7 @@ class Solver:
         gs = gridspec.GridSpec(n_rows, n_cols)  # (row, column)
         gs.update(wspace=margin, hspace=margin)
 
-        imgs = [utils.inverse_transform(imgs[idx]) for idx in range(len(imgs))]
+        imgs = [inverse_transform(imgs[idx]) for idx in range(len(imgs))]
 
         # save more bigger image
         for col_index in range(n_cols):

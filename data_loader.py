@@ -12,7 +12,7 @@ class DataLoader:
                  name='data'):
 
         self.ori_img_size = image_size
-        self.pair_img_size = (self.ori_img_size.shape[0], self.ori_img_size.shape[1] * 2, self.ori_img_size.shape[2])
+        self.pair_img_size = (self.ori_img_size[0], self.ori_img_size[1] * 2, self.ori_img_size[2])
         self.dataset = dataset
         self.resize_factor = 1.05
         self.rotate_angle = 5.
@@ -29,7 +29,7 @@ class DataLoader:
 
     def feed(self):
         with tf.name_scope(self.name):
-            parsed_image_dataset = self.dataset.map(self._parse_image_function)
+            parsed_image_dataset = self.dataset().map(self._parse_image_function)
             if self.is_train:
                 # return iterator object
                 train_image_batch_tensor_iterator = parsed_image_dataset \

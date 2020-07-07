@@ -11,6 +11,8 @@ from tensorflow import keras
 from utils import GanLosses
 import numpy as np
 import matplotlib.pyplot as plt
+import tensorflow.keras.backend as K
+from utils import *
 
 
 class MriGAN:
@@ -22,37 +24,41 @@ class MriGAN:
         self.img_size = (256, 256, 1)
         self.discriminator_optimizer = Adam(lr=0.00005, beta_1=0.5)
         self.generator_optimizer = Adam(lr=0.0002, beta_1=0.5)
-        self.mutual_loss = GanLosses.mutual_information_2d
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
         self.save_iter = 500
         self.batch_size = flags.batch_size
+
+        self._build_net()
+
         self.sample_image_output_path = "../tc2mResults"
 
     def _set_discriminator(self):
-        self.discriminator = Discriminator(self.img_shape)
+        self.discriminator = Discriminator(self.img_shape)()
         self.discriminator.compile(loss='binary_crossentropy',
                                    optimizer=self.discriminator_optimizer,
                                    metrics=['accuracy'])
 
     def _set_generator(self):
-        self.generator = Generator(self.img_shape)
-        self.generator.compile(loss=[self.mutual_loss],
+        self.generator = Generator(self.img_shape)()
+        self.generator.compile(loss=[self.mutual_information_2d],
                                optimizer=self.generator_optimizer,
                                metrics=['accuracy'])
 
     def _set_combined_model(self):
         self.combined_model = Model(self.input, self.valid)
         self.combined_model.compile(optimizer='adam',
-                                    loss='binary_crossentropy',
-                                    metrics=['accuracy'])
+                                    loss='binary_crossentropy')
 
     def _combined_generator_discriminator(self):
+        # gen_img and valid type must be tensor
         self.input = keras.Input(shape=self.img_shape)
         self.gen_img = self.generator(self.input)
+
         self.discriminator.trainable = False
+
         self.valid = self.discriminator(self.gen_img)
 
-    def _gan_discriminator_net(self):
+    def _build_net(self):
         self._set_discriminator()
         self._set_generator()
         self._combined_generator_discriminator()
@@ -66,12 +72,42 @@ class MriGAN:
 
         return total_loss
 
-    # def _generator_mi_losses(self, real_image, generated_image):
-    #     eps = 1e-8
-    #     conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
-    #     entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
-    #
-    #     return conditional_entropy + entropy
+    def mutual_information_2d(self, x, y):
+        sigma = 1
+        normalized = False
+        EPS = np.finfo(float).eps
+
+        bins = (256, 256)
+        jh = np.histogram2d(x, y, bins=bins)[0]
+        # smooth the jh with a gaussian filter of given sigma
+        ndimage.gaussian_filter(jh, sigma=sigma, mode='constant',
+                                output=jh)
+        # compute marginal histograms
+        jh = jh + EPS
+        sh = np.sum(jh)
+        jh = jh / sh
+        s1 = np.sum(jh, axis=0).reshape((-1, jh.shape[0]))
+        s2 = np.sum(jh, axis=1).reshape((jh.shape[1], -1))
+
+        # Normalised Mutual Information of:
+        # Studholme,  jhill & jhawkes (1998).
+        # "A normalized entropy measure of 3-D medical image alignment".
+        # in Proc. Medical Imaging 1998, vol. 3338, San Diego, CA, pp. 132-143.
+        if normalized:
+            mi = ((np.sum(s1 * np.log(s1)) + np.sum(s2 * np.log(s2)))
+                  / np.sum(jh * np.log(jh))) - 1
+        else:
+            mi = (np.sum(jh * np.log(jh)) - np.sum(s1 * np.log(s1))
+                  - np.sum(s2 * np.log(s2)))
+
+        return mi
+
+    def _generator_mi_losses(self, real_image, generated_image):
+        eps = 1e-8
+        conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
+        entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
+
+        return conditional_entropy + entropy
 
     def _generator_loss(self, generated_image):
         gen_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
@@ -80,33 +116,37 @@ class MriGAN:
 
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
 
-        for steps in range(steps_per_epochs):
-            img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
+        img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
 
-            img_ct_np_arr = self.sess.run(img_ct)
+        for steps in range(steps_per_epochs):
+
+            img_ct_np_arr, img_mr_np_arr = self.sess.run([img_ct, img_mr])
 
             valid_tensor = tf.ones((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
             fake_tensor = tf.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
 
-            valid_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
-            fake_np_arr = np.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
+            dis_valid_np_arr = np.ones((self.batch_size, 1))
+            dis_fake_np_arr = np.zeros((self.batch_size, 1))
 
-            gen_ct = self.generator.predict(img_mr)
+            # gen_ct is numpy array shape (batch_size, 256, 256, 1)
+            gen_ct = self.generator.predict(img_mr_np_arr)
 
-            d_loss_real = self.discriminator.train_on_batch(img_ct, valid_tensor)
-            d_loss_fake = self.discriminator.train_on_batch(gen_ct, fake_np_arr)
+            d_loss_real = self.discriminator.train_on_batch(img_ct_np_arr, dis_valid_np_arr)
+            d_loss_fake = self.discriminator.train_on_batch(gen_ct, dis_fake_np_arr)
 
             d_total_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
 
             g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct_np_arr)
 
-            g_loss = self.combined_model.train_on_batch(gen_ct, valid_np_arr)
+            # g_loss = self.combined_model.train_on_batch(gen_ct, dis_valid_np_arr)
             if steps == steps_per_epochs - 1:
                 return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
 
-    def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
-        mri_batch_image, ct_batch_image, gen_ct_batch_image = self.sess.run(
-            [mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor])
+    def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_numpy):
+        mri_batch_image, ct_batch_image = self.sess.run(
+            [mri_batch_tensor, ct_batch_tensor])
+
+        gen_ct_batch_image = gen_ct_batch_numpy
 
         # return batch image type is numpy array
         return [mri_batch_image, ct_batch_image, gen_ct_batch_image]
@@ -146,17 +186,13 @@ class MriGAN:
         pass
 
 
-class Discriminator(keras.models.Model):
+class Discriminator:
 
     def __init__(self, input_size):
-        inputs = keras.layers.Input(input_size)
-        outputs = self._networks(inputs)
-        self.optimizer = Adam(lr=0.00005, beta_1=0.5)
+        self.inputs = keras.layers.Input(input_size)
+        self.outputs = self._networks(self.inputs)
 
-        super().__init__(
-            inputs=inputs,
-            outputs=outputs
-        )
+        self.optimizer = Adam(lr=0.00005, beta_1=0.5)
 
     @classmethod
     def _networks(cls, inputs):
@@ -185,22 +221,22 @@ class Discriminator(keras.models.Model):
         return
 
     def __call__(self, *args, **kwargs):
-        return self
+        return tensorflow.keras.models.Model(self.inputs, self.outputs)
 
 
-class Generator(keras.models.Model):
+class Generator:
+
     def __init__(self, input_size, *args, **kwargs):
-        inputs = keras.layers.Input(input_size)
-        outputs = self._networks(inputs)
+        self.inputs = keras.layers.Input(input_size)
+        self.outputs = self._networks(self.inputs)
+
         self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
         self.optimizer = Adam(lr=0.0002, beta_1=0.5)
-        super().__init__(
-            inputs=inputs,
-            outputs=outputs
-        )
-        # input_shape = (512, 512, 1)
+        # super().__init__(
+        #     inputs=inputs,
+        #     outputs=outputs
+        # )
         # set adam optimizer
-        self.compile(loss=self._mi_losses, optimizer=Adam(lr=0.0002, beta_1=0.5))
 
     def generator_loss(self, generated_image):
         generated_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
@@ -227,4 +263,4 @@ class Generator(keras.models.Model):
             return outputs
 
     def __call__(self, *args, **kwargs):
-        return self
+        return tensorflow.keras.models.Model(self.inputs, self.outputs)

@@ -5,7 +5,7 @@ from solver import Solver
 Flags = tf.flags.FLAGS
 
 tf.flags.DEFINE_bool('is_train', True, 'define model mode dafault = True')
-tf.flags.DEFINE_integer('batch_size', 32, 'define batch size default = 32')
+tf.flags.DEFINE_integer('batch_size', 16, 'define batch size default = 32')
 tf.flags.DEFINE_string('dataset', 'brainM2C', 'define datsetName default = brainM2C')
 tf.flags.DEFINE_string('mode', 'mri_to_ct', 'define train model mri_to_ct or ct_to_mri  default = mri_to_ct')
 tf.flags.DEFINE_string('test_dataset_path', '../tc2mData/train/tfrecords/train.tfrecords',
