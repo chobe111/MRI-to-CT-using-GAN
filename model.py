@@ -45,9 +45,10 @@ class MriGAN:
                                metrics=['accuracy'])
 
     def _set_combined_model(self):
-        self.combined_model = Model(self.input, self.valid)
+        self.combined_model = Model(self.gen_img, self.valid)
+
         self.combined_model.compile(optimizer='adam',
-                                    loss='binary_crossentropy')
+                                    loss=[self.mutual_information_2d, 'binary_crossentropy'])
 
     def _combined_generator_discriminator(self):
         # gen_img and valid type must be tensor
@@ -138,7 +139,7 @@ class MriGAN:
 
             g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct_np_arr)
 
-            # g_loss = self.combined_model.train_on_batch(gen_ct, dis_valid_np_arr)
+            g_loss = self.combined_model.train_on_batch(gen_ct, dis_valid_np_arr)
             if steps == steps_per_epochs - 1:
                 return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
 
