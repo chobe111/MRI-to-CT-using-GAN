@@ -6,10 +6,7 @@ from tensorflow.keras.models import Model
 from keras_utils import *
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.layers import Flatten, MaxPooling2D
-import tensorflow as tf
-from tensorflow import keras
-from utils import GanLosses
-import numpy as np
+import tensorflow.compat.v1 as tf
 import matplotlib.pyplot as plt
 import tensorflow.keras.backend as K
 from utils import *
@@ -40,15 +37,16 @@ class MriGAN:
 
     def _set_generator(self):
         self.generator = Generator(self.img_shape)()
-        self.generator.compile(loss=[self.mutual_information_2d],
+        mi_loss = self.mutual_information_loss_func([[-1.0, 1.0], [-1.0, 1.0]], 256)
+        self.generator.compile(loss=mi_loss,
                                optimizer=self.generator_optimizer,
                                metrics=['accuracy'])
 
     def _set_combined_model(self):
-        self.combined_model = Model(self.gen_img, self.valid)
+        self.combined_model = Model(self.input, self.valid)
 
         self.combined_model.compile(optimizer='adam',
-                                    loss=[self.mutual_information_2d, 'binary_crossentropy'])
+                                    loss='binary_crossentropy')
 
     def _combined_generator_discriminator(self):
         # gen_img and valid type must be tensor
@@ -73,35 +71,107 @@ class MriGAN:
 
         return total_loss
 
-    def mutual_information_2d(self, x, y):
+    def mutual_information_loss_func(self, value_range, n_bins):
+        def get_loss(y_pred, y_true):
+
+            y_pred_flatten = K.flatten(y_pred)
+            y_true_flatten = K.flatten(y_true)
+
+            sigma = 1
+            normalized = False
+
+            EPS = K.epsilon()
+
+            jh = self.get2d_histogram(y_pred_flatten, y_true_flatten, value_range, nbins=n_bins,
+                                      dtype=tf.dtypes.int32)
+
+            sh = K.sum(jh)
+            jh = jh / sh
+            s1 = K.reshape(K.sum(jh, axis=0), (-1, jh.shape[0]))
+            # s1 = K.sum(jh, axis=0).reshape((-1, jh.shape[0]))
+            s2 = K.reshape(K.sum(jh, axis=1), (jh.shape[1], -1))
+            # s2 = K.sum(jh, axis=1).reshape((jh.shape[1], -1))
+
+            if normalized:
+                mi = ((K.sum(s1 * K.log(s1)) + K.sum(s2 * K.log(s2)))
+                      / K.sum(jh * K.log(jh))) - 1
+
+            else:
+                mi = (K.sum(jh * K.log(jh)) - K.sum(s1 * K.log(s1))
+                      - K.sum(s2 * K.log(s2)))
+
+            return -K.mean(mi)
+
+        return get_loss
+
+    @staticmethod
+    def get2d_histogram(x, y,
+                        value_range,
+                        nbins=100,
+                        dtype=tf.dtypes.int32):
+        """
+        Bins x, y coordinates of points onto simple square 2d histogram
+
+        Given the tensor x and y:
+        x: x coordinates of points
+        y: y coordinates of points
+        this operation returns a rank 2 `Tensor`
+        representing the indices of a histogram into which each element
+        of `values` would be binned. The bins are equal width and
+        determined by the arguments `value_range` and `nbins`.
+
+      Args:
+        x:  Numeric `Tensor`.
+        y: Numeric `Tensor`.
+        value_range[0] lims for x
+        value_range[1] lims for y
+
+        nbins:  Scalar `int32 Tensor`.  Number of histogram bins.
+        dtype:  dtype for returned histogram.
+        """
+        x_range = value_range[0]
+        y_range = value_range[1]
+
+        histy_bins = tf.histogram_fixed_width_bins(y, y_range, nbins=nbins, dtype=dtype)
+
+        H = tf.map_fn(lambda i: tf.histogram_fixed_width(x[histy_bins == i], x_range, nbins=nbins),
+                      tf.range(nbins))
+        return H  # Matrix!
+
+    @staticmethod
+    def mutual_information_2d(x, y):
+
+        # to analyze image mutual information
+        # flatten numpy 2d array to 1d array
+        x = x.ravel()
+        y = y.ravel()
+
         sigma = 1
         normalized = False
         EPS = np.finfo(float).eps
 
-        bins = (256, 256)
+        bins = 256
         jh = np.histogram2d(x, y, bins=bins)[0]
         # smooth the jh with a gaussian filter of given sigma
-        ndimage.gaussian_filter(jh, sigma=sigma, mode='constant',
-                                output=jh)
         # compute marginal histograms
         jh = jh + EPS
-        sh = np.sum(jh)
+        sh = K.sum(jh)
         jh = jh / sh
-        s1 = np.sum(jh, axis=0).reshape((-1, jh.shape[0]))
-        s2 = np.sum(jh, axis=1).reshape((jh.shape[1], -1))
+        s1 = K.sum(jh, axis=0).reshape((-1, jh.shape[0]))
+        s2 = K.sum(jh, axis=1).reshape((jh.shape[1], -1))
 
         # Normalised Mutual Information of:
         # Studholme,  jhill & jhawkes (1998).
         # "A normalized entropy measure of 3-D medical image alignment".
         # in Proc. Medical Imaging 1998, vol. 3338, San Diego, CA, pp. 132-143.
         if normalized:
-            mi = ((np.sum(s1 * np.log(s1)) + np.sum(s2 * np.log(s2)))
-                  / np.sum(jh * np.log(jh))) - 1
+            mi = ((K.sum(s1 * K.log(s1)) + K.sum(s2 * K.log(s2)))
+                  / K.sum(jh * K.log(jh))) - 1
         else:
-            mi = (np.sum(jh * np.log(jh)) - np.sum(s1 * np.log(s1))
-                  - np.sum(s2 * np.log(s2)))
+            mi = (K.sum(jh * K.log(jh)) - K.sum(s1 * K.log(s1))
+                  - K.sum(s2 * K.log(s2)))
 
-        return mi
+        return -mi
 
     def _generator_mi_losses(self, real_image, generated_image):
         eps = 1e-8
@@ -139,7 +209,8 @@ class MriGAN:
 
             g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct_np_arr)
 
-            g_loss = self.combined_model.train_on_batch(gen_ct, dis_valid_np_arr)
+            g_loss = self.combined_model.train_on_batch(img_ct_np_arr, dis_valid_np_arr)
+
             if steps == steps_per_epochs - 1:
                 return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
 
@@ -197,26 +268,25 @@ class Discriminator:
 
     @classmethod
     def _networks(cls, inputs):
-        with tf.variable_scope('discriminator') as scope:
-            conv1 = discriminator_conv(2, inputs)
-            pool1 = MaxPooling2D((2, 2))(conv1)
-            conv2 = discriminator_conv(4, pool1)
-            conv3 = discriminator_conv(8, conv2)
-            conv4 = discriminator_conv(16, conv3)
-            conv5 = discriminator_conv(32, conv4)
-            conv6 = discriminator_conv(64, conv5)
+        conv1 = discriminator_conv(2, inputs)
+        pool1 = MaxPooling2D((2, 2))(conv1)
+        conv2 = discriminator_conv(4, pool1)
+        conv3 = discriminator_conv(8, conv2)
+        conv4 = discriminator_conv(16, conv3)
+        conv5 = discriminator_conv(32, conv4)
+        conv6 = discriminator_conv(64, conv5)
 
-            flat = Flatten()(conv6)
+        flat = Flatten()(conv6)
 
-            dense1 = discriminator_dense(8 * 8 * 64, flat)
-            dense2 = discriminator_dense(4068, dense1)
-            dense3 = discriminator_dense(2048, dense2)
-            dense4 = discriminator_dense(1024, dense3)
-            dense5 = discriminator_dense(512, dense4)
+        dense1 = discriminator_dense(8 * 8 * 64, flat)
+        dense2 = discriminator_dense(4068, dense1)
+        dense3 = discriminator_dense(2048, dense2)
+        dense4 = discriminator_dense(1024, dense3)
+        dense5 = discriminator_dense(512, dense4)
 
-            final_layer = discriminator_final_layer(dense5)
+        final_layer = discriminator_final_layer(dense5)
 
-            return final_layer
+        return final_layer
 
     def _load_data(self):
         return
@@ -246,22 +316,21 @@ class Generator:
 
     @classmethod
     def _networks(cls, inputs):
-        with tf.variable_scope('generator') as scope:
-            batch1, pool1 = encoder_conv(32, inputs)
-            batch2, pool2 = encoder_conv(64, pool1)
-            batch3, pool3 = encoder_conv(128, pool2)
-            batch4, pool4 = encoder_conv(256, pool3)
-            batch5, pool5 = encoder_conv(512, pool4)
+        batch1, pool1 = encoder_conv(32, inputs)
+        batch2, pool2 = encoder_conv(64, pool1)
+        batch3, pool3 = encoder_conv(128, pool2)
+        batch4, pool4 = encoder_conv(256, pool3)
+        batch5, pool5 = encoder_conv(512, pool4)
 
-            up1 = encoder_to_decoder_conv(1024, pool5)
+        up1 = encoder_to_decoder_conv(1024, pool5)
 
-            up2 = decoder_conv(512, up1, batch5)
-            up3 = decoder_conv(256, up2, batch4)
-            up4 = decoder_conv(128, up3, batch3)
-            up5 = decoder_conv(64, up4, batch2)
+        up2 = decoder_conv(512, up1, batch5)
+        up3 = decoder_conv(256, up2, batch4)
+        up4 = decoder_conv(128, up3, batch3)
+        up5 = decoder_conv(64, up4, batch2)
 
-            outputs = generator_final_layer(32, up5, batch1)
-            return outputs
+        outputs = generator_final_layer(32, up5, batch1)
+        return outputs
 
     def __call__(self, *args, **kwargs):
         return tensorflow.keras.models.Model(self.inputs, self.outputs)

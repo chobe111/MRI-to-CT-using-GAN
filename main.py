@@ -1,5 +1,6 @@
-import numpy as np
 import tensorflow as tf
+
+
 from solver import Solver
 
 Flags = tf.flags.FLAGS
