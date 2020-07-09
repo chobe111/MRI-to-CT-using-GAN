@@ -10,7 +10,7 @@ import tensorflow.compat.v1 as tf
 import matplotlib.pyplot as plt
 import tensorflow.keras.backend as K
 from utils import *
-
+from tensorflow import keras
 
 class MriGAN:
     def __init__(self, sess, flags):
