@@ -19,7 +19,7 @@ class DataLoader:
         self.is_train = is_train
         self.name = name
         self.batch_size = batch_size
-        self.epoch = 1000
+        self.epoch = epoch
         self.min_queue_examples = len(dataset) * 2
 
         self.image_features = {
