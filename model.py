@@ -12,9 +12,11 @@ import tensorflow.keras.backend as K
 from utils import *
 from tensorflow import keras
 
+
 class MriGAN:
     def __init__(self, sess, flags):
 
+        self.mi = 500
         self.flags = flags
         self.sess = sess
         self.img_shape = (256, 256, 1)
@@ -24,6 +26,7 @@ class MriGAN:
         self.loss_obj = tensorflow.keras.losses.BinaryCrossentropy(from_logits=True)
         self.save_iter = 500
         self.batch_size = flags.batch_size
+        self.mutual_information = self.custom_mi_losses([[-1.0, 1.0], [-1.0, 1.0]], 256, False)
 
         self._build_net()
 
@@ -37,16 +40,87 @@ class MriGAN:
 
     def _set_generator(self):
         self.generator = Generator(self.img_shape)()
-        mi_loss = self.mutual_information_loss_func([[-1.0, 1.0], [-1.0, 1.0]], 256)
-        self.generator.compile(loss=mi_loss,
+        self.generator.compile(loss=self.ssim_loss,
                                optimizer=self.generator_optimizer,
                                metrics=['accuracy'])
 
     def _set_combined_model(self):
         self.combined_model = Model(self.input, self.valid)
-
+        self.custom_binary_losses = self.binary_cross_with_mutual_mi()
         self.combined_model.compile(optimizer='adam',
-                                    loss='binary_crossentropy')
+                                    loss=self.custom_binary_losses
+                                    )
+
+    @staticmethod
+    def get_jh(x, y, value_range, nbins):
+        dtype = tf.dtypes.int32
+        x_range = value_range[0]
+        y_range = value_range[1]
+        histy_bins = tf.histogram_fixed_width_bins(y, y_range, nbins=nbins, dtype=dtype)
+
+        def masking_info(tf_val):
+            return tf.math.equal(histy_bins, tf_val)
+
+        H = tf.map_fn(lambda i: tf.histogram_fixed_width(x[masking_info(i)],
+                                                         x_range,
+                                                         nbins=nbins
+                                                         ),
+                      tf.range(nbins))
+
+        return H
+
+    @staticmethod
+    def get_s1(eager_tensor):
+        sum_tensor = tf.reduce_sum(eager_tensor, axis=0)
+        reshape_tensor = tf.reshape(sum_tensor, [-1, eager_tensor.shape[0]])
+        return reshape_tensor
+
+    @staticmethod
+    def get_s2(eager_tensor):
+        sum_tensor = tf.reduce_sum(eager_tensor, axis=1)
+        reshape_tensor = tf.reshape(sum_tensor, [eager_tensor.shape[1], -1])
+
+        return reshape_tensor
+
+    def custom_mi_losses(self, value_range, n_bins, normalized):
+        joint_entropy = self.get_jh
+        s1_func = self.get_s1
+        s2_func = self.get_s2
+
+        def _generator_mi_losses(real_image, generated_image):
+
+            y_pred_flatten = K.flatten(generated_image)
+            y_true_flatten = K.flatten(real_image)
+
+            jh = joint_entropy(y_true_flatten, y_pred_flatten, value_range, n_bins)
+            jh = tf.dtypes.cast(jh, tf.float32)
+
+            real_image_prob = s1_func(jh)
+            generated_image_prob = s2_func(jh)
+
+            if normalized:
+                mi = ((K.sum(real_image_prob * K.log(real_image_prob))
+                       + K.sum(generated_image_prob * K.log(generated_image_prob)))
+                      / K.sum(jh * K.log(jh))) - 1
+            else:
+                mi = (K.sum(jh * K.log(jh)) - K.sum(real_image_prob * K.log(real_image_prob))
+                      - K.sum(generated_image_prob * K.log(generated_image_prob)))
+
+            return -1 * K.mean(mi)
+
+        return _generator_mi_losses
+
+    def binary_cross_with_mutual_mi(self):
+        mi_loss = self.mi
+
+        def loss(y_true, y_pred):
+            loss_obj = tf.keras.losses.BinaryCrossentropy()
+            binary_loss = loss_obj(y_true, y_pred) + mi_loss
+            total_loss = binary_loss + mi_loss * 0.5
+
+            return total_loss
+
+        return loss
 
     def _combined_generator_discriminator(self):
         # gen_img and valid type must be tensor
@@ -62,14 +136,6 @@ class MriGAN:
         self._set_generator()
         self._combined_generator_discriminator()
         self._set_combined_model()
-
-    def _discriminator_loss(self, real_image, fake_image):
-        real_loss = self.loss_obj(tf.ones_like(real_image), real_image)
-        fake_loss = self.loss_obj(tf.zeros_like(fake_image), fake_image)
-
-        total_loss = 0.5 * (real_loss + fake_loss)
-
-        return total_loss
 
     def mutual_information_loss_func(self, value_range, n_bins):
         def get_loss(y_pred, y_true):
@@ -105,13 +171,17 @@ class MriGAN:
         return get_loss
 
     @staticmethod
+    def ssim_loss(y_true, y_pred):
+        # max_val is 1.0 because y_true and y_pred is zero centered
+        return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
+
+    @staticmethod
     def get2d_histogram(x, y,
                         value_range,
                         nbins=100,
                         dtype=tf.dtypes.int32):
         """
         Bins x, y coordinates of points onto simple square 2d histogram
-
         Given the tensor x and y:
         x: x coordinates of points
         y: y coordinates of points
@@ -119,13 +189,11 @@ class MriGAN:
         representing the indices of a histogram into which each element
         of `values` would be binned. The bins are equal width and
         determined by the arguments `value_range` and `nbins`.
-
       Args:
         x:  Numeric `Tensor`.
         y: Numeric `Tensor`.
         value_range[0] lims for x
         value_range[1] lims for y
-
         nbins:  Scalar `int32 Tensor`.  Number of histogram bins.
         dtype:  dtype for returned histogram.
         """
@@ -173,43 +241,42 @@ class MriGAN:
 
         return -mi
 
-    def _generator_mi_losses(self, real_image, generated_image):
-        eps = 1e-8
-        conditional_entropy = K.mean(- K.sum(K.log(generated_image + eps) * real_image, axis=1))
-        entropy = K.mean(- K.sum(K.log(real_image + eps) * real_image, axis=1))
+    def train_discriminator(self, real_ct, gen_ct):
+        dis_valid_np_arr = np.ones((self.batch_size, 1))
+        dis_fake_np_arr = np.zeros((self.batch_size, 1))
 
-        return conditional_entropy + entropy
+        d_loss_real = self.discriminator.train_on_batch(real_ct, dis_valid_np_arr)
+        d_loss_fake = self.discriminator.train_on_batch(gen_ct, dis_fake_np_arr)
 
-    def _generator_loss(self, generated_image):
-        gen_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
+        d_loss_total = np.add(d_loss_real, d_loss_fake) * 0.5
 
-        return gen_loss
+        print("d_loss_total = ", d_loss_total[0], "accuracy = ", d_loss_total[1])
+
+    def train_generator(self, input_mr, input_ct):
+        g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
+
+        print("g_ssim_loss = ", g_ssim_loss)
+
+    def train_combined_model(self, input_mr):
+        dis_valid_np_arr = np.ones((self.batch_size, 1))
+        combined_loss = self.combined_model.train_on_batch(input_mr, dis_valid_np_arr)
+        print("combined_loss = ", combined_loss)
 
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
 
         img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
 
         for steps in range(steps_per_epochs):
-
             img_ct_np_arr, img_mr_np_arr = self.sess.run([img_ct, img_mr])
-
-            valid_tensor = tf.ones((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
-            fake_tensor = tf.zeros((self.batch_size, self.img_size[0], self.img_size[1], self.img_size[2]))
-
-            dis_valid_np_arr = np.ones((self.batch_size, 1))
-            dis_fake_np_arr = np.zeros((self.batch_size, 1))
-
             # gen_ct is numpy array shape (batch_size, 256, 256, 1)
             gen_ct = self.generator.predict(img_mr_np_arr)
+            self.mi = self.mutual_information(img_ct, gen_ct)
+            self.discriminator.trainable = True
+            self.train_discriminator(img_ct_np_arr, gen_ct)
 
-            d_loss_real = self.discriminator.train_on_batch(img_ct_np_arr, dis_valid_np_arr)
-            d_loss_fake = self.discriminator.train_on_batch(gen_ct, dis_fake_np_arr)
-
-            d_total_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-
-            g_mi_loss = self.generator.train_on_batch(gen_ct, img_ct_np_arr)
-
-            g_loss = self.combined_model.train_on_batch(img_ct_np_arr, dis_valid_np_arr)
+            self.discriminator.trainable = False
+            self.train_generator(img_mr_np_arr, img_ct)
+            self.train_combined_model(img_mr_np_arr)
 
             if steps == steps_per_epochs - 1:
                 return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
