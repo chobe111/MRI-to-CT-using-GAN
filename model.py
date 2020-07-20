@@ -52,6 +52,17 @@ class MriGAN:
                                     )
 
     @staticmethod
+    def _get_current_loss_dict(total_d_loss, total_g_ssim_loss, total_combined_loss, num):
+
+        losses = {
+            "d_loss": total_d_loss / num,
+            "g_ssim_loss": total_g_ssim_loss / num,
+            "combined_loss": total_combined_loss / num
+        }
+
+        return losses
+
+    @staticmethod
     def get_jh(x, y, value_range, nbins):
         dtype = tf.dtypes.int32
         x_range = value_range[0]
@@ -252,19 +263,29 @@ class MriGAN:
 
         print("d_loss_total = ", d_loss_total[0], "accuracy = ", d_loss_total[1])
 
+        return d_loss_total
+
     def train_generator(self, input_mr, input_ct):
         g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
 
         print("g_ssim_loss = ", g_ssim_loss)
+
+        return g_ssim_loss
 
     def train_combined_model(self, input_mr):
         dis_valid_np_arr = np.ones((self.batch_size, 1))
         combined_loss = self.combined_model.train_on_batch(input_mr, dis_valid_np_arr)
         print("combined_loss = ", combined_loss)
 
+        return combined_loss
+
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
 
         img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
+
+        total_d_loss = 0
+        total_g_ssim_loss = 0
+        total_combined_loss = 0
 
         for steps in range(steps_per_epochs):
             img_ct_np_arr, img_mr_np_arr = self.sess.run([img_ct, img_mr])
@@ -272,14 +293,20 @@ class MriGAN:
             gen_ct = self.generator.predict(img_mr_np_arr)
             self.mi = self.mutual_information(img_ct, gen_ct)
             self.discriminator.trainable = True
-            self.train_discriminator(img_ct_np_arr, gen_ct)
+            total_d_loss += self.train_discriminator(img_ct_np_arr, gen_ct)
 
             self.discriminator.trainable = False
-            self.train_generator(img_mr_np_arr, img_ct)
-            self.train_combined_model(img_mr_np_arr)
+            total_g_ssim_loss += self.train_generator(img_mr_np_arr, img_ct)
+            total_combined_loss += self.train_combined_model(img_mr_np_arr)
 
             if steps == steps_per_epochs - 1:
-                return self.sampling(epoch_num, img_mr, img_ct, gen_ct)
+                return (self._get_current_loss_dict(total_d_loss,
+                                                    total_g_ssim_loss,
+                                                    total_combined_loss,
+                                                    steps_per_epochs
+                                                    ),
+
+                        self.sampling(epoch_num, img_mr, img_ct, gen_ct))
 
     def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_numpy):
         mri_batch_image, ct_batch_image = self.sess.run(
@@ -337,11 +364,6 @@ class Generator:
 
         self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
         self.optimizer = Adam(lr=0.0002, beta_1=0.5)
-        # super().__init__(
-        #     inputs=inputs,
-        #     outputs=outputs
-        # )
-        # set adam optimizer
 
     def generator_loss(self, generated_image):
         generated_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
