@@ -98,6 +98,7 @@ class DataLoader:
 
     def basic_preprocess(self, img):
         img = tf.image.resize(img, size=(self.ori_img_size[0], self.ori_img_size[1]))
+        # zero - centering input image
         img = (tf.image.convert_image_dtype(img, dtype=tf.float32) / 127.5) - 1.0
         img.set_shape(self.ori_img_size)
 
