@@ -294,36 +294,6 @@ class MriGAN:
         images = self.sampling_images(mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor)
         return images
 
-    @staticmethod
-    def plots(imgs, iter_time, image_size, save_file):
-        scale, margin = 0.02, 0.02
-        n_cols, n_rows = len(imgs), imgs[0].shape[0]
-        cell_size_h, cell_size_w = imgs[0].shape[1] * scale, imgs[0].shape[2] * scale
-
-        fig = plt.figure(figsize=(cell_size_w * n_cols, cell_size_h * n_rows))  # (column, row)
-        gs = gridspec.GridSpec(n_rows, n_cols)  # (row, column)
-        gs.update(wspace=margin, hspace=margin)
-
-        imgs = [utils.inverse_transform(imgs[idx]) for idx in range(len(imgs))]
-
-        # save more bigger image
-        for col_index in range(n_cols):
-            for row_index in range(n_rows):
-                ax = plt.subplot(gs[row_index * n_cols + col_index])
-                plt.axis('off')
-                ax.set_xticklabels([])
-                ax.set_yticklabels([])
-                ax.set_aspect('equal')
-                plt.imshow((imgs[col_index][row_index]).reshape(image_size[0], image_size[1]), cmap='Greys_r')
-
-        plt.savefig(save_file + '/sample_{}.png'.format(str(iter_time).zfill(5)), bbox_inches='tight')
-        plt.close(fig)
-
-    @staticmethod
-    def _save_model(mr_img, ct_img, gen_ct_img):
-
-        pass
-
 
 class Discriminator:
 
@@ -354,9 +324,6 @@ class Discriminator:
         final_layer = discriminator_final_layer(dense5)
 
         return final_layer
-
-    def _load_data(self):
-        return
 
     def __call__(self, *args, **kwargs):
         return tensorflow.keras.models.Model(self.inputs, self.outputs)
