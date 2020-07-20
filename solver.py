@@ -8,6 +8,7 @@ from utils import maybe_mkdirs, inverse_transform
 from data_loader import DataLoader
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+import math
 
 
 class SolverLogger:
@@ -79,12 +80,17 @@ class Solver:
 
         self.sess.run(tf.global_variables_initializer())
 
+    def save_best_model(self, losses):
+
+        pass
+
     def train(self):
         steps_per_epoch = len(self.dataset) / self.batch_size
         for epoch in range(self.epochs):
             self.logger.info("{} epochs start..".format(epoch))
-            images = self.model.train_steps(epoch, int(steps_per_epoch), self.batch_image_generator)
+            losses, images = self.model.train_steps(epoch, int(steps_per_epoch), self.batch_image_generator)
             self.plots(images, epoch, (256, 256, 1), self.sample_base_path)
+            self.save_best_model(losses)
             self.logger.info("{} epochs end..".format(epoch))
 
     @staticmethod
@@ -117,16 +123,12 @@ class Solver:
         pass
 
     def load_model(self):
-        # TODO : MAKE LATER
         pass
 
     def set_needed_folder(self):
         if self.flags.model_output_path is None:
             self._set_sample_folder()
             self._set_logger_folder()
-
-        elif self.flags.model_output_path is not None:
-            pass
 
     def _set_sample_folder(self):
         self.sample_base_path = f"../{self.flags.dataset}/samples/{self.cur_time}"
