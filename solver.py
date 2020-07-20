@@ -4,7 +4,7 @@ import logging
 from dataset import dataset
 from model import MriGAN
 import os
-from utils import maybe_mkdirs,inverse_transform
+from utils import maybe_mkdirs, inverse_transform
 from data_loader import DataLoader
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -121,7 +121,6 @@ class Solver:
         pass
 
     def set_needed_folder(self):
-
         if self.flags.model_output_path is None:
             self._set_sample_folder()
             self._set_logger_folder()
@@ -130,13 +129,13 @@ class Solver:
             pass
 
     def _set_sample_folder(self):
-        self.sample_base_path = "../{}/samples/{}".format(self.flags.dataset, self.cur_time)
+        self.sample_base_path = f"../{self.flags.dataset}/samples/{self.cur_time}"
         maybe_mkdirs(self.sample_base_path)
 
     def _set_logger_folder(self):
-        self.logger_base_path = "../{}/logging/{}".format(self.flags.dataset, self.cur_time)
+        self.logger_base_path = f"../{self.flags.dataset}/logging/{self.cur_time}"
         maybe_mkdirs(self.logger_base_path)
 
     def _set_models_folder(self):
-        self.model_base_path = "../{}/models/{}"
+        self.model_base_path = f"../{self.flags.dataset}/models/{self.cur_time}"
         maybe_mkdirs(self.model_base_path)
