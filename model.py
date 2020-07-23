@@ -125,11 +125,13 @@ class MriGAN:
         mi_loss = self.mi
 
         def loss(y_true, y_pred):
-            loss_obj = tf.keras.losses.BinaryCrossentropy()
-            binary_loss = loss_obj(y_true, y_pred) + mi_loss
-            total_loss = binary_loss + mi_loss * 0.5
+            with tf.name_scope("binary_cross_mi_loss"):
 
-            return total_loss
+                loss_obj = tf.keras.losses.BinaryCrossentropy()
+                binary_loss = loss_obj(y_true, y_pred) + mi_loss
+                total_loss = binary_loss + mi_loss * 0.5
+
+                return total_loss
 
         return loss
 
@@ -183,8 +185,13 @@ class MriGAN:
 
     @staticmethod
     def ssim_loss(y_true, y_pred):
-        # max_val is 1.0 because y_true and y_pred is zero centered
-        return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
+        with tf.name_scope("ssim_loss"):
+            # max_val is 1.0 because y_true and y_pred is zero centered
+            ssim_loss = tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
+            tf.compat.v1.summary.histogram("ssim_loss", ssim_loss)
+            tf.compat.v1.summary.scalar("ssim_loss", ssim_loss)
+
+            return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
 
     @staticmethod
     def get2d_histogram(x, y,
@@ -267,16 +274,13 @@ class MriGAN:
 
     def train_generator(self, input_mr, input_ct):
         g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
-
         print("g_ssim_loss = ", g_ssim_loss)
-
         return g_ssim_loss
 
     def train_combined_model(self, input_mr):
         dis_valid_np_arr = np.ones((self.batch_size, 1))
         combined_loss = self.combined_model.train_on_batch(input_mr, dis_valid_np_arr)
         print("combined_loss = ", combined_loss)
-
         return combined_loss
 
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
@@ -327,37 +331,36 @@ class Discriminator:
     def __init__(self, input_size):
         self.inputs = keras.layers.Input(input_size)
         self.outputs = self._networks(self.inputs)
-
         self.optimizer = Adam(lr=0.00005, beta_1=0.5)
 
     @classmethod
     def _networks(cls, inputs):
-        conv1 = discriminator_conv(2, inputs)
-        pool1 = MaxPooling2D((2, 2))(conv1)
-        conv2 = discriminator_conv(4, pool1)
-        conv3 = discriminator_conv(8, conv2)
-        conv4 = discriminator_conv(16, conv3)
-        conv5 = discriminator_conv(32, conv4)
-        conv6 = discriminator_conv(64, conv5)
+        with tf.name_scope("Discriminator"):
+            conv1 = discriminator_conv(2, inputs, "dis_conv1")
+            pool1 = MaxPooling2D((2, 2))(conv1)
+            conv2 = discriminator_conv(4, pool1, "dis_conv2")
+            conv3 = discriminator_conv(8, conv2, "dis_conv3")
+            conv4 = discriminator_conv(16, conv3, "dis_conv4")
+            conv5 = discriminator_conv(32, conv4, "dis_conv5")
+            conv6 = discriminator_conv(64, conv5, "dis_conv6")
 
-        flat = Flatten()(conv6)
+            flat = Flatten()(conv6)
 
-        dense1 = discriminator_dense(8 * 8 * 64, flat)
-        dense2 = discriminator_dense(4068, dense1)
-        dense3 = discriminator_dense(2048, dense2)
-        dense4 = discriminator_dense(1024, dense3)
-        dense5 = discriminator_dense(512, dense4)
+            dense1 = discriminator_dense(8 * 8 * 64, flat, "dis_dense1")
+            dense2 = discriminator_dense(4068, dense1, "dis_dense2")
+            dense3 = discriminator_dense(2048, dense2, "dis_dense3")
+            dense4 = discriminator_dense(1024, dense3, "dis_dense4")
+            dense5 = discriminator_dense(512, dense4, "dis_dense5")
 
-        final_layer = discriminator_final_layer(dense5)
+            final_layer = discriminator_final_layer(dense5, "dis_final")
 
-        return final_layer
+            return final_layer
 
     def __call__(self, *args, **kwargs):
         return tensorflow.keras.models.Model(self.inputs, self.outputs)
 
 
 class Generator:
-
     def __init__(self, input_size, *args, **kwargs):
         self.inputs = keras.layers.Input(input_size)
         self.outputs = self._networks(self.inputs)
@@ -372,21 +375,22 @@ class Generator:
 
     @classmethod
     def _networks(cls, inputs):
-        batch1, pool1 = encoder_conv(32, inputs)
-        batch2, pool2 = encoder_conv(64, pool1)
-        batch3, pool3 = encoder_conv(128, pool2)
-        batch4, pool4 = encoder_conv(256, pool3)
-        batch5, pool5 = encoder_conv(512, pool4)
+        with tf.name_scope("Generator"):
+            batch1, pool1 = encoder_conv(32, inputs, "gen_conv1")
+            batch2, pool2 = encoder_conv(64, pool1, "gen_conv2")
+            batch3, pool3 = encoder_conv(128, pool2, "gen_conv3")
+            batch4, pool4 = encoder_conv(256, pool3, "gen_conv4")
+            batch5, pool5 = encoder_conv(512, pool4, "gen_conv5")
 
-        up1 = encoder_to_decoder_conv(1024, pool5)
+            up1 = encoder_to_decoder_conv(1024, pool5, "gen_encoder_to_decoder")
 
-        up2 = decoder_conv(512, up1, batch5)
-        up3 = decoder_conv(256, up2, batch4)
-        up4 = decoder_conv(128, up3, batch3)
-        up5 = decoder_conv(64, up4, batch2)
+            up2 = decoder_conv(512, up1, batch5, "gen_deconv1")
+            up3 = decoder_conv(256, up2, batch4, "gen_deconv2")
+            up4 = decoder_conv(128, up3, batch3, "gen_deconv3")
+            up5 = decoder_conv(64, up4, batch2, "gen_decon4")
 
-        outputs = generator_final_layer(32, up5, batch1)
-        return outputs
+            outputs = generator_final_layer(32, up5, batch1, "gen_final")
+            return outputs
 
     def __call__(self, *args, **kwargs):
         return tensorflow.keras.models.Model(self.inputs, self.outputs)

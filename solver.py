@@ -8,7 +8,6 @@ from utils import maybe_mkdirs, inverse_transform
 from data_loader import DataLoader
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-import math
 
 
 class SolverLogger:
@@ -33,6 +32,9 @@ class SolverLogger:
 
 
 class Solver:
+    def _tensor_board(self):
+        self.merged_summary = tf.compat.v1.summary.merge_all()
+        self.board_writer = tf.compat.v1.summary.FileWriter(self.flags.tensor_board_log_path)
 
     def _set_session(self):
         run_config = tf.compat.v1.ConfigProto()
@@ -79,6 +81,12 @@ class Solver:
         self._init_logger()
 
         self.sess.run(tf.global_variables_initializer())
+        self._tensor_board()
+
+    def _losses_info(self, cur_epoch, losses):
+        self.logger.info(f"epoch {cur_epoch} d_loss = {losses['d_loss']}")
+        self.logger.info(f"epoch {cur_epoch} g_ssim_loss = {losses['g_ssim_loss']}")
+        self.logger.info(f"epoch {cur_epoch} combined_loss = {losses['combined_loss']}")
 
     def save_best_model(self, losses):
 
@@ -90,7 +98,10 @@ class Solver:
             self.logger.info("{} epochs start..".format(epoch))
             losses, images = self.model.train_steps(epoch, int(steps_per_epoch), self.batch_image_generator)
             self.plots(images, epoch, (256, 256, 1), self.sample_base_path)
+
+            self._losses_info(epoch, losses)
             self.save_best_model(losses)
+
             self.logger.info("{} epochs end..".format(epoch))
 
     @staticmethod
@@ -129,6 +140,12 @@ class Solver:
         if self.flags.model_output_path is None:
             self._set_sample_folder()
             self._set_logger_folder()
+            self._set_tensor_board_log_folder()
+            self._set_models_folder()
+
+    def _set_tensor_board_log_folder(self):
+        self.tensor_board_log_path = f"../{self.flags.dataset}/tf_board_logs/{self.cur_time}"
+        maybe_mkdirs(self.tensor_board_log_path)
 
     def _set_sample_folder(self):
         self.sample_base_path = f"../{self.flags.dataset}/samples/{self.cur_time}"
