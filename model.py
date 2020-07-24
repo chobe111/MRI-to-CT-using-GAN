@@ -289,7 +289,6 @@ class MriGAN:
 
     def train_generator(self, input_mr, input_ct):
         g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
-
         return g_ssim_loss
 
     def train_combined_model(self, input_mr):
