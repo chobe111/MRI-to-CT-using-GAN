@@ -9,36 +9,36 @@ def tf_name_scope(key='name'):
         def wrapper(*args, **kwargs):
             name = kwargs[key]
             with tf.name_scope(name):
-                func()
+                return func(*args, **kwargs)
 
         return wrapper
 
     return dec
 
 
-@tf_name_scope
-def discriminator_final_layer(input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def discriminator_final_layer(input: Tensor, name='') -> Tensor:
     final_layer = Dense(1, activation='sigmoid')(input)
     return final_layer
 
 
-@tf_name_scope
-def discriminator_dense(output_nodes: int, input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def discriminator_dense(output_nodes: int, input: Tensor, name='') -> Tensor:
     dense1 = Dense(output_nodes, activation='relu')(input)
     drop1 = Dropout(0.5)(dense1)
     return drop1
 
 
-@tf_name_scope
-def discriminator_conv(filter_size: int, input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def discriminator_conv(filter_size: int, input: Tensor, name='') -> Tensor:
     conv = Conv2D(filter_size, (3, 3), padding='same', strides=(2, 2))(input)
     batch = BatchNormalization()(conv)
     activate = Activation('relu')(batch)
     return conv
 
 
-@tf_name_scope
-def base_conv(filter_size: int, input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def base_conv(filter_size: int, input: Tensor, name='') -> Tensor:
     conv = Conv2D(filter_size, (3, 3), padding='same')(input)
     # conv = Conv2D(filter_size, (3, 3), padding='valid')(input)
     batch = BatchNormalization()(conv)
@@ -46,18 +46,18 @@ def base_conv(filter_size: int, input: Tensor, name) -> Tensor:
     return activate
 
 
-@tf_name_scope
-def dropout_conv(filter_size: int, input: Tensor, name) -> Tensor:
-    conv = base_conv(filter_size, input)
+@tf_name_scope()
+def dropout_conv(filter_size: int, input: Tensor, name='') -> Tensor:
+    conv = base_conv(filter_size, input, name=name + "conv")
     drop = Dropout(0.5)(conv)
 
     return drop
 
 
-@tf_name_scope
-def encoder_conv(filter_size: int, input: Tensor, name) -> (Tensor, Tensor):
-    conv1 = dropout_conv(filter_size, input)
-    conv2 = base_conv(filter_size, conv1)
+@tf_name_scope()
+def encoder_conv(filter_size: int, input: Tensor, name='') -> (Tensor, Tensor):
+    conv1 = dropout_conv(filter_size, input, name=name + "_dropout")
+    conv2 = base_conv(filter_size, conv1, name=name + "conv1")
     conv3 = Conv2D(filter_size, (3, 3), padding='same')(conv2)
     # conv3 = Conv2D(filter_size, (3, 3), padding='valid')(conv2)
     batch3 = BatchNormalization()(conv3)
@@ -67,10 +67,10 @@ def encoder_conv(filter_size: int, input: Tensor, name) -> (Tensor, Tensor):
     return batch3, pool3
 
 
-@tf_name_scope
-def encoder_to_decoder_conv(filter_size: int, input: Tensor, name) -> Tensor:
-    conv1 = dropout_conv(filter_size, input)
-    conv2 = base_conv(filter_size, conv1)
+@tf_name_scope()
+def encoder_to_decoder_conv(filter_size: int, input: Tensor, name='') -> Tensor:
+    conv1 = dropout_conv(filter_size, input, name=name + "_drop_out")
+    conv2 = base_conv(filter_size, conv1, name=name + "_conv")
 
     up3 = Conv2DTranspose(int(filter_size / 2), (2, 2), strides=(2, 2),
                           padding='same', activation='relu')(conv2)
@@ -81,12 +81,12 @@ def encoder_to_decoder_conv(filter_size: int, input: Tensor, name) -> Tensor:
     return up3
 
 
-@tf_name_scope
-def decoder_conv(filter_size: int, input: Tensor, merge_input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def decoder_conv(filter_size: int, input: Tensor, merge_input: Tensor, name='') -> Tensor:
     merge1 = concatenate([input, merge_input], axis=3)
 
-    conv1 = dropout_conv(filter_size, merge1, name + "_drop_conv")
-    conv2 = base_conv(filter_size, conv1, name + "_base_conv")
+    conv1 = dropout_conv(filter_size, merge1, name=name + "_drop_conv")
+    conv2 = base_conv(filter_size, conv1, name=name + "_base_conv")
 
     up3 = Conv2DTranspose(int(filter_size / 2), (2, 2), strides=(2, 2),
                           padding='same', activation='relu')(conv2)
@@ -96,12 +96,13 @@ def decoder_conv(filter_size: int, input: Tensor, merge_input: Tensor, name) -> 
     return up3
 
 
-@tf_name_scope
-def generator_final_layer(filter_size, input: Tensor, merge_input: Tensor, name) -> Tensor:
+@tf_name_scope()
+def generator_final_layer(filter_size, input: Tensor, merge_input: Tensor, name='') -> Tensor:
     merge1 = concatenate([input, merge_input], axis=3)
 
-    conv1 = base_conv(filter_size, merge1)
-    conv2 = base_conv(filter_size, conv1)
+    conv1 = base_conv(filter_size, merge1, name=name + "_conv1")
+    conv2 = base_conv(filter_size, conv1, name=name + "_conv2")
+
     conv3 = Conv2D(1, (1, 1), padding='same', activation='sigmoid')(conv2)
     # conv3 = Conv2D(1, (1, 1), padding='valid', activation='sigmoid')(conv2)
 

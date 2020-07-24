@@ -14,8 +14,12 @@ from tensorflow import keras
 
 
 class MriGAN:
-    def __init__(self, sess, flags):
+    def _tensor_board(self):
+        self.board_writer = tf.compat.v1.summary.FileWriter(self.tensor_board_log_path, self.sess.graph)
 
+    def __init__(self, sess, flags, tensor_board_log_path):
+
+        self.tensor_board_log_path = tensor_board_log_path
         self.mi = 500
         self.flags = flags
         self.sess = sess
@@ -29,18 +33,20 @@ class MriGAN:
         self.mutual_information = self.custom_mi_losses([[-1.0, 1.0], [-1.0, 1.0]], 256, False)
 
         self._build_net()
+        self.sess.run(tf.global_variables_initializer())
+        self._tensor_board()
 
         self.sample_image_output_path = "../tc2mResults"
 
     def _set_discriminator(self):
         self.discriminator = Discriminator(self.img_shape)()
-        self.discriminator.compile(loss='binary_crossentropy',
+        self.discriminator.compile(loss=self.discriminator_loss,
                                    optimizer=self.discriminator_optimizer,
                                    metrics=['accuracy'])
 
     def _set_generator(self):
         self.generator = Generator(self.img_shape)()
-        self.generator.compile(loss=self.ssim_loss,
+        self.generator.compile(loss=self.generator_loss,
                                optimizer=self.generator_optimizer,
                                metrics=['accuracy'])
 
@@ -55,9 +61,10 @@ class MriGAN:
     def _get_current_loss_dict(total_d_loss, total_g_ssim_loss, total_combined_loss, num):
 
         losses = {
-            "d_loss": total_d_loss / num,
-            "g_ssim_loss": total_g_ssim_loss / num,
-            "combined_loss": total_combined_loss / num
+            "cur_steps": num,
+            "d_loss": total_d_loss,
+            "g_ssim_loss": total_g_ssim_loss,
+            "combined_loss": total_combined_loss
         }
 
         return losses
@@ -72,11 +79,14 @@ class MriGAN:
         def masking_info(tf_val):
             return tf.math.equal(histy_bins, tf_val)
 
-        H = tf.map_fn(lambda i: tf.histogram_fixed_width(x[masking_info(i)],
-                                                         x_range,
-                                                         nbins=nbins
-                                                         ),
-                      tf.range(nbins))
+        H = tf.map_fn(
+            lambda i: tf.histogram_fixed_width(
+                x[masking_info(i)],
+                x_range,
+                nbins=nbins
+            ),
+            tf.range(nbins)
+        )
 
         return H
 
@@ -121,14 +131,21 @@ class MriGAN:
 
         return _generator_mi_losses
 
+    def discriminator_loss(self, y_true, y_pred):
+        # set from_logits=True because i use sigmoid function in last layer of discriminator networks
+        # binary crossentropy : -(t*log(p) + (1-t)*log(1-p)) y_true is 0
+        loss_obj = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+        binary_loss = loss_obj(y_true, y_pred)
+
+        return binary_loss
+
     def binary_cross_with_mutual_mi(self):
         mi_loss = self.mi
 
         def loss(y_true, y_pred):
             with tf.name_scope("binary_cross_mi_loss"):
-
-                loss_obj = tf.keras.losses.BinaryCrossentropy()
-                binary_loss = loss_obj(y_true, y_pred) + mi_loss
+                loss_obj = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+                binary_loss = loss_obj(y_true, y_pred)
                 total_loss = binary_loss + mi_loss * 0.5
 
                 return total_loss
@@ -183,15 +200,13 @@ class MriGAN:
 
         return get_loss
 
-    @staticmethod
-    def ssim_loss(y_true, y_pred):
+    def generator_loss(self, y_true, y_pred):
         with tf.name_scope("ssim_loss"):
             # max_val is 1.0 because y_true and y_pred is zero centered
             ssim_loss = tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
-            tf.compat.v1.summary.histogram("ssim_loss", ssim_loss)
-            tf.compat.v1.summary.scalar("ssim_loss", ssim_loss)
+            ssim_for_tb = tf.reduce_mean(ssim_loss)
 
-            return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
+            return ssim_loss
 
     @staticmethod
     def get2d_histogram(x, y,
@@ -274,34 +289,47 @@ class MriGAN:
 
     def train_generator(self, input_mr, input_ct):
         g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
-        print("g_ssim_loss = ", g_ssim_loss)
+
         return g_ssim_loss
 
     def train_combined_model(self, input_mr):
         dis_valid_np_arr = np.ones((self.batch_size, 1))
         combined_loss = self.combined_model.train_on_batch(input_mr, dis_valid_np_arr)
         print("combined_loss = ", combined_loss)
+
+        tf.compat.v1.summary.scalar('combined_loss', combined_loss)
+        tf.compat.v1.summary.histogram = ('combined_loss', combined_loss)
+
         return combined_loss
+
+    def record_summary(self, cur_step):
+        merged_summary = tf.compat.v1.summary.merge_all()
+        summary = self.sess.run(merged_summary)
+        self.board_writer.add_summary(summary, global_step=cur_step)
 
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
 
         img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
 
-        total_d_loss = 0
-        total_g_ssim_loss = 0
-        total_combined_loss = 0
+        total_d_loss = []
+        total_g_ssim_loss = []
+        total_combined_loss = []
 
         for steps in range(steps_per_epochs):
             img_ct_np_arr, img_mr_np_arr = self.sess.run([img_ct, img_mr])
             # gen_ct is numpy array shape (batch_size, 256, 256, 1)
             gen_ct = self.generator.predict(img_mr_np_arr)
             self.mi = self.mutual_information(img_ct, gen_ct)
+            # Train Discriminator
             self.discriminator.trainable = True
-            total_d_loss += self.train_discriminator(img_ct_np_arr, gen_ct)
+            total_d_loss.append(self.train_discriminator(img_ct_np_arr, gen_ct))
 
             self.discriminator.trainable = False
-            total_g_ssim_loss += self.train_generator(img_mr_np_arr, img_ct)
-            total_combined_loss += self.train_combined_model(img_mr_np_arr)
+            # Train Generator
+            total_g_ssim_loss.append(self.train_generator(img_mr_np_arr, img_ct))
+            total_combined_loss.append(self.train_combined_model(img_mr_np_arr))
+
+            self.record_summary(epoch_num * steps_per_epochs + steps)
 
             if steps == steps_per_epochs - 1:
                 return (self._get_current_loss_dict(total_d_loss,
@@ -336,23 +364,23 @@ class Discriminator:
     @classmethod
     def _networks(cls, inputs):
         with tf.name_scope("Discriminator"):
-            conv1 = discriminator_conv(2, inputs, "dis_conv1")
+            conv1 = discriminator_conv(2, inputs, name="dis_conv1")
             pool1 = MaxPooling2D((2, 2))(conv1)
-            conv2 = discriminator_conv(4, pool1, "dis_conv2")
-            conv3 = discriminator_conv(8, conv2, "dis_conv3")
-            conv4 = discriminator_conv(16, conv3, "dis_conv4")
-            conv5 = discriminator_conv(32, conv4, "dis_conv5")
-            conv6 = discriminator_conv(64, conv5, "dis_conv6")
+            conv2 = discriminator_conv(4, pool1, name="dis_conv2")
+            conv3 = discriminator_conv(8, conv2, name="dis_conv3")
+            conv4 = discriminator_conv(16, conv3, name="dis_conv4")
+            conv5 = discriminator_conv(32, conv4, name="dis_conv5")
+            conv6 = discriminator_conv(64, conv5, name="dis_conv6")
 
             flat = Flatten()(conv6)
 
-            dense1 = discriminator_dense(8 * 8 * 64, flat, "dis_dense1")
-            dense2 = discriminator_dense(4068, dense1, "dis_dense2")
-            dense3 = discriminator_dense(2048, dense2, "dis_dense3")
-            dense4 = discriminator_dense(1024, dense3, "dis_dense4")
-            dense5 = discriminator_dense(512, dense4, "dis_dense5")
+            dense1 = discriminator_dense(8 * 8 * 64, flat, name="dis_dense1")
+            dense2 = discriminator_dense(4068, dense1, name="dis_dense2")
+            dense3 = discriminator_dense(2048, dense2, name="dis_dense3")
+            dense4 = discriminator_dense(1024, dense3, name="dis_dense4")
+            dense5 = discriminator_dense(512, dense4, name="dis_dense5")
 
-            final_layer = discriminator_final_layer(dense5, "dis_final")
+            final_layer = discriminator_final_layer(dense5, name="dis_final")
 
             return final_layer
 
@@ -368,28 +396,23 @@ class Generator:
         self.loss_obj = keras.losses.BinaryCrossentropy(from_logits=True)
         self.optimizer = Adam(lr=0.0002, beta_1=0.5)
 
-    def generator_loss(self, generated_image):
-        generated_loss = self.loss_obj(tf.ones_like(generated_image), generated_image)
-        # TODO : Use L1 or L2 loss
-        return generated_loss
-
     @classmethod
     def _networks(cls, inputs):
         with tf.name_scope("Generator"):
-            batch1, pool1 = encoder_conv(32, inputs, "gen_conv1")
-            batch2, pool2 = encoder_conv(64, pool1, "gen_conv2")
-            batch3, pool3 = encoder_conv(128, pool2, "gen_conv3")
-            batch4, pool4 = encoder_conv(256, pool3, "gen_conv4")
-            batch5, pool5 = encoder_conv(512, pool4, "gen_conv5")
+            batch1, pool1 = encoder_conv(32, inputs, name="gen_conv1")
+            batch2, pool2 = encoder_conv(64, pool1, name="gen_conv2")
+            batch3, pool3 = encoder_conv(128, pool2, name="gen_conv3")
+            batch4, pool4 = encoder_conv(256, pool3, name="gen_conv4")
+            batch5, pool5 = encoder_conv(512, pool4, name="gen_conv5")
 
-            up1 = encoder_to_decoder_conv(1024, pool5, "gen_encoder_to_decoder")
+            up1 = encoder_to_decoder_conv(1024, pool5, name="gen_encoder_to_decoder")
 
-            up2 = decoder_conv(512, up1, batch5, "gen_deconv1")
-            up3 = decoder_conv(256, up2, batch4, "gen_deconv2")
-            up4 = decoder_conv(128, up3, batch3, "gen_deconv3")
-            up5 = decoder_conv(64, up4, batch2, "gen_decon4")
+            up2 = decoder_conv(512, up1, batch5, name="gen_deconv1")
+            up3 = decoder_conv(256, up2, batch4, name="gen_deconv2")
+            up4 = decoder_conv(128, up3, batch3, name="gen_deconv3")
+            up5 = decoder_conv(64, up4, batch2, name="gen_decon4")
 
-            outputs = generator_final_layer(32, up5, batch1, "gen_final")
+            outputs = generator_final_layer(32, up5, batch1, name="gen_final")
             return outputs
 
     def __call__(self, *args, **kwargs):

@@ -32,9 +32,6 @@ class SolverLogger:
 
 
 class Solver:
-    def _tensor_board(self):
-        self.merged_summary = tf.compat.v1.summary.merge_all()
-        self.board_writer = tf.compat.v1.summary.FileWriter(self.flags.tensor_board_log_path)
 
     def _set_session(self):
         run_config = tf.compat.v1.ConfigProto()
@@ -46,12 +43,12 @@ class Solver:
         solver_logger = SolverLogger(self.logger_base_path)
         self.logger = solver_logger()
 
-        self.logger.info("is_train = {}".format(self.flags.is_train))
-        self.logger.info("dataset name = {}".format(self.flags.dataset))
-        self.logger.info("batch size = {}".format(self.flags.batch_size))
-        self.logger.info("mode = {}".format(self.flags.mode))
-        self.logger.info("test data path = {}".format(self.flags.test_dataset_path))
-        self.logger.info("train data path = {}".format(self.flags.train_dataset_path))
+        self.logger.info(f"is_train = {self.flags.is_train}")
+        self.logger.info(f"dataset name = {self.flags.dataset}")
+        self.logger.info(f"batch size = {self.flags.batch_size}")
+        self.logger.info(f"mode = {self.flags.mode}")
+        self.logger.info(f"test data path = {self.flags.test_dataset_path}")
+        self.logger.info(f"train data path = {self.flags.train_dataset_path}")
 
     def _set_batch_image_generator(self):
         data_reader = DataLoader(
@@ -66,22 +63,22 @@ class Solver:
         self.batch_image_generator = data_reader.feed()
 
     def __init__(self, flags):
+        self.cur_time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.flags = flags
         self.is_train = self.flags.is_train
         self.batch_size = self.flags.batch_size
         self.epochs = self.flags.epoch
         self._set_session()
-        self.model = MriGAN(self.sess, flags)
+
+        self.tensor_board_log_path = f"../{self.flags.dataset}/tf_board_logs/{self.cur_time}"
+        self.sess.run(tf.global_variables_initializer())
+        self.model = MriGAN(self.sess, flags, self.tensor_board_log_path)
 
         self.dataset = dataset(flags)
         self._set_batch_image_generator()
 
-        self.cur_time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         self.set_needed_folder()
         self._init_logger()
-
-        self.sess.run(tf.global_variables_initializer())
-        self._tensor_board()
 
     def _losses_info(self, cur_epoch, losses):
         self.logger.info(f"epoch {cur_epoch} d_loss = {losses['d_loss']}")
@@ -89,20 +86,17 @@ class Solver:
         self.logger.info(f"epoch {cur_epoch} combined_loss = {losses['combined_loss']}")
 
     def save_best_model(self, losses):
-
         pass
 
     def train(self):
         steps_per_epoch = len(self.dataset) / self.batch_size
         for epoch in range(self.epochs):
-            self.logger.info("{} epochs start..".format(epoch))
+            self.logger.info(f"{epoch} epochs start..")
             losses, images = self.model.train_steps(epoch, int(steps_per_epoch), self.batch_image_generator)
             self.plots(images, epoch, (256, 256, 1), self.sample_base_path)
-
             self._losses_info(epoch, losses)
             self.save_best_model(losses)
-
-            self.logger.info("{} epochs end..".format(epoch))
+            self.logger.info(f"{epoch} epochs end..")
 
     @staticmethod
     def plots(imgs, iter_time, image_size, save_file):
@@ -127,7 +121,7 @@ class Solver:
                 ax.set_aspect('equal')
                 plt.imshow((imgs[col_index][row_index]).reshape(image_size[0], image_size[1]), cmap='Greys_r')
 
-        plt.savefig(save_file + '/sample_{}.png'.format(str(iter_time).zfill(5)), bbox_inches='tight')
+        plt.savefig(save_file + f'/sample_{str(iter_time).zfill(5)}.png', bbox_inches='tight')
         plt.close(fig)
 
     def test(self):
@@ -144,7 +138,6 @@ class Solver:
             self._set_models_folder()
 
     def _set_tensor_board_log_folder(self):
-        self.tensor_board_log_path = f"../{self.flags.dataset}/tf_board_logs/{self.cur_time}"
         maybe_mkdirs(self.tensor_board_log_path)
 
     def _set_sample_folder(self):
