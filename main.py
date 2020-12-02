@@ -15,20 +15,18 @@ tf.flags.DEFINE_string('train_dataset_path', '../tc2mData/test/tfrecords/test.tf
 tf.flags.DEFINE_string('model_output_path', None, 'folder or save model to continue learning default = None')
 tf.flags.DEFINE_integer('epoch', 1000, 'set epoch number default = 1000')
 
+
 def main():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-
     # define solver object
     solver = Solver(Flags)
-
 
     if Flags.is_train:
         solver.train()
     else:
         solver.test()
-
 
 
 if __name__ == '__main__':
