@@ -89,17 +89,16 @@ class DataLoader:
             y_img = tf.contrib.image.rotate(y_img, angles=random_angle, interpolation='NEAREST')
 
         # Do resize and zero-centering
-        x_img = self.basic_preprocess(x_img)
-        y_img = self.basic_preprocess(y_img)
-        x_img_ori = self.basic_preprocess(x_img_ori)
-        y_img_ori = self.basic_preprocess(y_img_ori)
+        x_img = self.basic_preprocess(x_img, 'ct')
+        y_img = self.basic_preprocess(y_img, 'mri')
+        x_img_ori = self.basic_preprocess(x_img_ori, 'ct')
+        y_img_ori = self.basic_preprocess(y_img_ori, 'mri')
 
         return x_img, y_img, x_img_ori, y_img_ori
 
-    def basic_preprocess(self, img):
+    def basic_preprocess(self, img, mode: str):
         img = tf.image.resize(img, size=(self.ori_img_size[0], self.ori_img_size[1]))
         # zero - centering input image
         img = (tf.image.convert_image_dtype(img, dtype=tf.float32) / 127.5) - 1.0
         img.set_shape(self.ori_img_size)
-
         return img

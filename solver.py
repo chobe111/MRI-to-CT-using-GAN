@@ -122,6 +122,7 @@ class Solver:
                 plt.imshow((imgs[col_index][row_index]).reshape(image_size[0], image_size[1]), cmap='Greys_r')
 
         plt.savefig(save_file + f'/sample_{str(iter_time).zfill(5)}.png', bbox_inches='tight')
+
         plt.close(fig)
 
     def test(self):

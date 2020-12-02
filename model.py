@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import tensorflow.keras.backend as K
 from utils import *
 from tensorflow import keras
+import matplotlib.pyplot as plt
 
 
 class MriGAN:
@@ -46,15 +47,15 @@ class MriGAN:
 
     def _set_generator(self):
         self.generator = Generator(self.img_shape)()
-        self.generator.compile(loss=self.generator_loss,
-                               optimizer=self.generator_optimizer,
-                               metrics=['accuracy'])
+        # self.generator.compile(loss=self.generator_loss,
+        #                        optimizer=self.generator_optimizer,
+        #                        metrics=['accuracy'])
 
     def _set_combined_model(self):
-        self.combined_model = Model(self.input, self.valid)
+        self.combined_model = Model(self.input, [self.gen_img, self.valid])
         self.custom_binary_losses = self.binary_cross_with_mutual_mi()
         self.combined_model.compile(optimizer='adam',
-                                    loss=self.custom_binary_losses
+                                    loss=[self.generator_loss, self.custom_binary_losses]
                                     )
 
     @staticmethod
@@ -100,6 +101,7 @@ class MriGAN:
     def get_s2(eager_tensor):
         sum_tensor = tf.reduce_sum(eager_tensor, axis=1)
         reshape_tensor = tf.reshape(sum_tensor, [eager_tensor.shape[1], -1])
+
 
         return reshape_tensor
 
@@ -169,7 +171,6 @@ class MriGAN:
 
     def mutual_information_loss_func(self, value_range, n_bins):
         def get_loss(y_pred, y_true):
-
             y_pred_flatten = K.flatten(y_pred)
             y_true_flatten = K.flatten(y_true)
 
@@ -201,12 +202,30 @@ class MriGAN:
         return get_loss
 
     def generator_loss(self, y_true, y_pred):
-        with tf.name_scope("ssim_loss"):
-            # max_val is 1.0 because y_true and y_pred is zero centered
-            ssim_loss = tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=2.0))
-            ssim_for_tb = tf.reduce_mean(ssim_loss)
+        L1_lambda = 100
 
-            return ssim_loss
+        with tf.name_scope("voxel_loss"):
+            loss = tf.reduce_mean(tf.abs(y_true - y_pred))
+            voxel_loss = L1_lambda * loss
+
+        with tf.name_scope("ssim_loss"):
+            y_true = (y_true + 1.0) / 2.
+            y_pred = (y_pred + 1.0) / 2.
+            # max_val is 1.0 because y_true and y_pred is zero centered
+            ssim_positive = tf.math.maximum(0., tf.image.ssim(y_pred, y_true, max_val=1.0))
+            ssim_loss = -1 * tf.math.log(ssim_positive)
+            ssim_loss = tf.reduce_mean(ssim_loss)
+            return ssim_loss + voxel_loss
+
+    def show_array_data(self, mri, gen, ct):
+        mri = mri[0]
+        gen = gen[0]
+        ct = ct[0]
+
+        mri_gen_pair = np.concatenate((mri, gen), axis=0)
+        a = plt.imshow(mri.reshape(256, 256))
+        b = plt.imshow(gen.reshape(256, 256))
+        c_ct = plt.imshow(ct.reshape(256, 256))
 
     @staticmethod
     def get2d_histogram(x, y,
@@ -241,7 +260,6 @@ class MriGAN:
 
     @staticmethod
     def mutual_information_2d(x, y):
-
         # to analyze image mutual information
         # flatten numpy 2d array to 1d array
         x = x.ravel()
@@ -281,23 +299,22 @@ class MriGAN:
         d_loss_real = self.discriminator.train_on_batch(real_ct, dis_valid_np_arr)
         d_loss_fake = self.discriminator.train_on_batch(gen_ct, dis_fake_np_arr)
 
-        d_loss_total = np.add(d_loss_real, d_loss_fake) * 0.5
+        print("d_loss_real = ", d_loss_real)
+        print("d_loss_fake = ", d_loss_fake)
 
-        print("d_loss_total = ", d_loss_total[0], "accuracy = ", d_loss_total[1])
-
-        return d_loss_total
+        return np.add(d_loss_real, d_loss_fake)
 
     def train_generator(self, input_mr, input_ct):
         g_ssim_loss = self.generator.train_on_batch(input_mr, input_ct)
         return g_ssim_loss
 
-    def train_combined_model(self, input_mr):
+    def train_combined_model(self, input_mr, input_ct):
         dis_valid_np_arr = np.ones((self.batch_size, 1))
-        combined_loss = self.combined_model.train_on_batch(input_mr, dis_valid_np_arr)
-        print("combined_loss = ", combined_loss)
+        combined_loss = self.combined_model.train_on_batch(input_mr, [input_ct, dis_valid_np_arr])
 
-        tf.compat.v1.summary.scalar('combined_loss', combined_loss)
-        tf.compat.v1.summary.histogram = ('combined_loss', combined_loss)
+        print("combined_loss = ", combined_loss)
+        tf.compat.v1.summary.scalar('combined_loss', combined_loss[0])
+        tf.compat.v1.summary.histogram = ('combined_loss', combined_loss[0])
 
         return combined_loss
 
@@ -307,7 +324,6 @@ class MriGAN:
         self.board_writer.add_summary(summary, global_step=cur_step)
 
     def train_steps(self, epoch_num, steps_per_epochs, batch_img_generator):
-
         img_ct, img_mr, img_ct_ori, img_mr_ori, img_names = batch_img_generator.get_next()
 
         total_d_loss = []
@@ -316,18 +332,16 @@ class MriGAN:
 
         for steps in range(steps_per_epochs):
             img_ct_np_arr, img_mr_np_arr = self.sess.run([img_ct, img_mr])
+
             # gen_ct is numpy array shape (batch_size, 256, 256, 1)
             gen_ct = self.generator.predict(img_mr_np_arr)
             self.mi = self.mutual_information(img_ct, gen_ct)
+            # For Debugging
+            # self.show_array_data(img_mr_np_arr, gen_ct, img_ct_np_arr)
             # Train Discriminator
-            self.discriminator.trainable = True
             total_d_loss.append(self.train_discriminator(img_ct_np_arr, gen_ct))
-
-            self.discriminator.trainable = False
             # Train Generator
-            total_g_ssim_loss.append(self.train_generator(img_mr_np_arr, img_ct))
-            total_combined_loss.append(self.train_combined_model(img_mr_np_arr))
-
+            total_combined_loss.append(self.train_combined_model(img_mr_np_arr, img_ct))
             self.record_summary(epoch_num * steps_per_epochs + steps)
 
             if steps == steps_per_epochs - 1:
@@ -337,19 +351,14 @@ class MriGAN:
                                                     steps_per_epochs
                                                     ),
 
-                        self.sampling(epoch_num, img_mr, img_ct, gen_ct))
+                        self.sampling(epoch_num, img_mr_np_arr, img_ct_np_arr, gen_ct))
 
-    def sampling_images(self, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_numpy):
-        mri_batch_image, ct_batch_image = self.sess.run(
-            [mri_batch_tensor, ct_batch_tensor])
-
-        gen_ct_batch_image = gen_ct_batch_numpy
-
+    def sampling_images(self, mri_batch_image, ct_batch_image, gen_ct_batch_image):
         # return batch image type is numpy array
         return [mri_batch_image, ct_batch_image, gen_ct_batch_image]
 
-    def sampling(self, epoch, mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor):
-        images = self.sampling_images(mri_batch_tensor, ct_batch_tensor, gen_ct_batch_tensor)
+    def sampling(self, epoch, mri_batch_numpy, ct_batch_numpy, gen_ct_batch_numpy):
+        images = self.sampling_images(mri_batch_numpy, ct_batch_numpy, gen_ct_batch_numpy)
         return images
 
 

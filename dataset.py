@@ -11,6 +11,7 @@ class BrainM2C(object):
             cnt += 1
 
         self.train_data_len = cnt
+        print(cnt)
 
     def __init__(self, flags):
         self.name = 'brainM2C'
